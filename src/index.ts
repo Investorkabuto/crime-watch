@@ -12,7 +12,18 @@ const MAX_BODY_BYTES = 1024 * 1024;
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get("/api/v1/health", (c) => c.json({ ok: true }));
+/** 死活確認。データベースのテーブルと初期データがそろっているかも返す */
+app.get("/api/v1/health", async (c) => {
+  try {
+    const r = await c.env.DB.prepare(
+      "SELECT (SELECT COUNT(*) FROM laws) AS laws, (SELECT COUNT(*) FROM charge_aliases) AS aliases",
+    ).first<{ laws: number; aliases: number }>();
+    const ready = !!r && r.laws > 0 && r.aliases > 0;
+    return c.json({ ok: ready, database: ready ? "ready" : "not_seeded", laws: r?.laws ?? 0, aliases: r?.aliases ?? 0 }, ready ? 200 : 503);
+  } catch {
+    return c.json({ ok: false, database: "not_migrated" }, 503);
+  }
+});
 
 // ===== 受信 API（Muse → Crime Watch）=====
 app.post("/api/v1/ingest", async (c) => {
@@ -44,6 +55,10 @@ app.post("/api/v1/ingest", async (c) => {
   const receivedAt = nowIso();
 
   const dict = await loadDictionary(c.env.DB);
+  // 初期データ（罪状辞書）が入っていない状態で取り込むと全件が未分類になるため、受け付けない
+  if (dict.aliases.size === 0) {
+    return c.json({ error: "database_not_seeded", hint: "0002_seed_laws.sql が適用されていません" }, 503);
+  }
   const results: ItemResult[] = [];
   for (let i = 0; i < items.length; i++) {
     try {
@@ -256,5 +271,14 @@ app.post("/api/v1/admin/reclassify", async (c) => {
 });
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));
+
+// 想定外のエラー。テーブル未作成などの原因が送信側にも分かるように JSON で返す（詳細はログのみ）
+app.onError((err, c) => {
+  console.error("unhandled error", err);
+  if (/no such table/i.test(String(err?.message ?? err))) {
+    return c.json({ error: "database_not_ready", hint: "D1 のマイグレーションが適用されていません" }, 503);
+  }
+  return c.json({ error: "internal_error" }, 500);
+});
 
 export default app;

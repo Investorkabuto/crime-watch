@@ -151,12 +151,13 @@ async function upsertReport(
     ...(item.suspects ?? []).map((p, i) =>
       db
         .prepare(
-          `INSERT INTO report_persons (report_id, seq, person_ref, gender, age, age_group, juvenile_class) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO report_persons (report_id, seq, person_ref, gender, age, age_group, juvenile_class, plea) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id, i, p.person_ref ?? null, p.gender ?? null, item.is_juvenile ? null : (p.age ?? null),
           p.age_group ?? (item.is_juvenile ? null : ageToGroup(p.age)),
           p.juvenile_class ?? ageToJuvenileClass(p.age) ?? (item.is_juvenile ? "juvenile" : null),
+          p.plea ?? null,
         ),
     ),
   ];

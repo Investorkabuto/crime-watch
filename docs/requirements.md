@@ -446,6 +446,7 @@ CREATE TABLE raw_payloads (
 - `person_ref`（`suspects` と `defendant` の中）: Muse が人物ごとに発行する**ランダムな ID**。同じ事件の報道と判決で同じ人物を対応づける。氏名のハッシュそのものは使わない（§9-11）
 - 判決の `occurred_on`（犯行日。行為時点の法定刑の判定に使う）と `prefecture`
 - 報道の段階に「再逮捕」を追加
+- v0.7: 報道の `suspects` に認否（`plea`）を追加（判決の `factors.plea` と同じ値）
 
 ### 5.1 事件の報道（`type: "report"`）
 ```json

@@ -61,7 +61,7 @@ export const reportSchema = z
     occurred_on: date.optional(),
     prefecture: z.enum(PREFECTURES),
     city: z.string().max(50).optional(),
-    suspects: z.array(person).optional(),
+    suspects: z.array(person.extend({ plea: z.enum(["admit", "deny", "partial", "unknown"]).optional() })).optional(),
   })
   .superRefine((v, ctx) => {
     if (!v.is_juvenile) return;

@@ -7,13 +7,22 @@
       "stage": "逮捕",
       "title": "警察官を名乗り高齢女性から現金をだまし取った疑い 20代の男を逮捕",
       "summary": "警察官を名乗る電話で高齢女性から現金300万円をだまし取ったとして、20代の男が詐欺の疑いで逮捕された。",
-      "charges": ["詐欺"],
+      "charges": [
+        "詐欺"
+      ],
       "is_juvenile": false,
       "occurred_on": "2026-03-01",
       "reported_at": "2026-03-10T10:30:00+09:00",
       "prefecture": "大阪府",
       "city": "大阪市",
-      "suspects": [{ "person_ref": "p-7f3a", "gender": "male", "age": 24 }],
+      "suspects": [
+        {
+          "person_ref": "p-7f3a",
+          "gender": "male",
+          "age": 24,
+          "plea": "admit"
+        }
+      ],
       "backfill": true,
       "source_url": "https://example.com/news/123",
       "source_name": "○○新聞"

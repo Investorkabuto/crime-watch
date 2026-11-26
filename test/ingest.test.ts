@@ -6,6 +6,16 @@ import { signedIngest, view } from "./helpers";
 
 type Json = Record<string, any>;
 
+describe("死活確認", () => {
+  it("テーブルと初期データがそろっていれば ready", async () => {
+    const res = await SELF.fetch("https://cw.test/api/v1/health");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Json;
+    expect(body.database).toBe("ready");
+    expect(body.laws).toBeGreaterThan(0);
+  });
+});
+
 describe("受信 API の認証", () => {
   it("トークンが違えば 401", async () => {
     const res = await signedIngest(report, { token: "wrong" });
@@ -59,6 +69,19 @@ describe("取り込み", () => {
     expect(j.judges[0].name).toBe("山田太郎");
     expect(j.judges[0].role).toBe("単独");
     expect(j).not.toHaveProperty("person_ref");
+  });
+
+  it("報道の被疑者ごとの認否を保存する", async () => {
+    const item = {
+      ...report.items[0],
+      external_id: "plea-1",
+      case_ref: "case-plea-1",
+      suspects: [{ person_ref: "p-plea", gender: "female", age: 41, plea: "deny" }],
+    };
+    const res = (await (await signedIngest({ items: [item] })).json()) as Json;
+    expect(res.created).toBe(1);
+    const row = await env.DB.prepare("SELECT plea FROM report_persons WHERE person_ref = 'p-plea'").first<{ plea: string }>();
+    expect(row?.plea).toBe("deny");
   });
 
   it("同じ external_id の再送は更新として扱う（冪等）", async () => {
