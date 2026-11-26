@@ -133,3 +133,29 @@ describe("自動チェック（性犯罪の年齢）", () => {
     expect(detectPii({ summary }, sex).map((f) => f.kind)).toContain("victim_age");
   });
 });
+
+import { normalizeNationality, residenceGroup } from "../src/nationality";
+
+describe("国籍の正規化", () => {
+  it.each([
+    ["ベトナム国籍", "ベトナム", "VN"],
+    ["ベトナム人", "ベトナム", "VN"],
+    ["中華人民共和国", "中国", "CN"],
+    ["米国籍", "アメリカ", "US"],
+    ["中国籍", "中国", "CN"],
+    ["英国人", "イギリス", "GB"],
+    ["韓国籍", "韓国", "KR"],
+    ["朝鮮籍", "朝鮮", null],
+    ["ジンバブエ国籍", "ジンバブエ", null],
+  ])("%s → %s（%s）", (raw, name, code) => expect(normalizeNationality(raw)).toEqual({ name, code }));
+  it("空や不明は null（記載なし）", () => {
+    expect(normalizeNationality("")).toBeNull();
+    expect(normalizeNationality("不明")).toBeNull();
+  });
+  it("在留資格の大分類（警察庁の区分）", () => {
+    expect(residenceGroup("技能実習")).toBe("来日外国人");
+    expect(residenceGroup("定住者")).toBe("来日外国人");
+    expect(residenceGroup("特別永住者")).toBe("定着居住者");
+    expect(residenceGroup("不明")).toBeNull();
+  });
+});

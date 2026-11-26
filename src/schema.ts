@@ -1,5 +1,6 @@
 // 受信データの検証（schema/ingest.schema.json と同じ内容を zod で表現したもの）
 import { z } from "zod";
+import { RESIDENCE_STATUSES } from "./nationality";
 
 export const PREFECTURES = [
   "北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県",
@@ -62,6 +63,9 @@ const person = z.strictObject({
   age_group: z.string().regex(/^(10歳未満|[1-9]0代|100歳以上)$/).optional(),
   juvenile_class: z.enum(["juvenile", "specified_juvenile", "adult", "unknown"]).optional(),
   occupation: z.enum(OCCUPATIONS).optional(),
+  // 記事に明記された国籍だけを入れる（「ベトナム国籍」「ベトナム」など記事の表記でよい）。書かれていなければ送らない
+  nationality: z.string().min(1).max(30).optional(),
+  residence_status: z.enum(RESIDENCE_STATUSES).optional(),
 });
 
 const common = {

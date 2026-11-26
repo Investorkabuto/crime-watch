@@ -46,8 +46,9 @@ export async function trialStats(db: D1Database) {
        FROM laws l ORDER BY l.sort_order`,
     ),
     db.prepare(
-      `SELECT (SELECT COUNT(*) FROM reports WHERE flags IS NOT NULL) AS reports,
-              (SELECT COUNT(*) FROM judgments WHERE flags IS NOT NULL) AS judgments`,
+      `SELECT (SELECT SUM(CASE WHEN r.flags IS NOT NULL AND NOT EXISTS (SELECT 1 FROM flag_reviews fr WHERE fr.parent_type = 'report' AND fr.parent_id = r.id AND fr.reviewed_flags = r.flags) THEN 1 ELSE 0 END) FROM reports r) AS reports,
+              (SELECT SUM(CASE WHEN j.flags IS NOT NULL AND NOT EXISTS (SELECT 1 FROM flag_reviews fr WHERE fr.parent_type = 'judgment' AND fr.parent_id = j.id AND fr.reviewed_flags = j.flags) THEN 1 ELSE 0 END) FROM judgments j) AS judgments,
+              (SELECT COUNT(*) FROM flag_reviews) AS reviewed`,
     ),
     db.prepare(
       `SELECT substr(received_at, 1, 10) AS day, SUM(item_count) AS items, SUM(created) AS created,
