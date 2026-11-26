@@ -5,13 +5,13 @@
       "external_id": "muse-r-x",
       "case_ref": "muse-case-x",
       "stage": "逮捕",
-      "title": "少年を逮捕",
-      "summary": "少年が窃盗の疑いで逮捕された。",
+      "title": "テスト",
+      "summary": "被害者の正確な年齢や氏名は受け付けない例。",
       "charges": ["窃盗"],
-      "is_juvenile": true,
+      "is_juvenile": false,
       "reported_at": "2026-03-10T10:30:00+09:00",
       "prefecture": "大阪府",
-      "city": "大阪市",
+      "victims": [{ "age": 72, "name": "山田花子" }],
       "source_url": "https://example.com/news/1"
     }
   ]

@@ -297,7 +297,7 @@
         "police_station": {
           "type": "string",
           "maxLength": 50,
-          "description": "警察署（例: 天満署）。少年事件では送らない"
+          "description": "警察署（例: 天満署）"
         },
         "prosecutor_office": {
           "type": "string",
@@ -313,40 +313,6 @@
         },
         "circumstances": {
           "$ref": "#/$defs/circumstances"
-        }
-      },
-      "if": {
-        "properties": {
-          "is_juvenile": {
-            "const": true
-          }
-        }
-      },
-      "then": {
-        "not": {
-          "anyOf": [
-            {
-              "required": [
-                "city"
-              ]
-            },
-            {
-              "required": [
-                "police_station"
-              ]
-            }
-          ]
-        },
-        "properties": {
-          "suspects": {
-            "items": {
-              "not": {
-                "required": [
-                  "age"
-                ]
-              }
-            }
-          }
         }
       }
     },
@@ -660,7 +626,7 @@
         "city": {
           "type": "string",
           "maxLength": 50,
-          "description": "発生した市区町村。少年事件では送らない"
+          "description": "発生した市区町村"
         },
         "police_agency": {
           "type": "string",
@@ -681,29 +647,6 @@
         },
         "circumstances": {
           "$ref": "#/$defs/circumstances"
-        }
-      },
-      "if": {
-        "properties": {
-          "is_juvenile": {
-            "const": true
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "defendant": {
-            "not": {
-              "required": [
-                "age"
-              ]
-            }
-          }
-        },
-        "not": {
-          "required": [
-            "city"
-          ]
         }
       }
     },

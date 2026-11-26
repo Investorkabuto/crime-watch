@@ -163,8 +163,7 @@ app.get("/api/v1/cases", async (c) => {
   const offset = Math.max(Number(q.offset) || 0, 0);
   const { results } = await c.env.DB.prepare(
     `SELECT c.id, c.case_ref, c.title, c.summary, c.occurred_on, c.prefecture,
-            CASE WHEN c.is_juvenile = 1 THEN NULL ELSE c.city END AS city,
-            c.is_juvenile, c.latest_stage, c.latest_at, c.backfill, c.flagged
+            c.city, c.is_juvenile, c.latest_stage, c.latest_at, c.backfill, c.flagged
             , c.status
      FROM cases c ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY c.latest_at DESC LIMIT ? OFFSET ?`,
   )
@@ -178,7 +177,7 @@ app.get("/api/v1/cases/:id", async (c) => {
   const db = c.env.DB;
   const kase = await db
     .prepare(
-      `SELECT id, case_ref, title, summary, occurred_on, prefecture, CASE WHEN is_juvenile = 1 THEN NULL ELSE city END AS city,
+      `SELECT id, case_ref, title, summary, occurred_on, prefecture, city,
               is_juvenile, latest_stage, latest_at, backfill, flagged, status FROM cases WHERE id = ? OR case_ref = ?`,
     )
     .bind(id, id)
@@ -187,21 +186,20 @@ app.get("/api/v1/cases/:id", async (c) => {
   const [reports, rcharges, persons, judgments, jcharges, judges, victims] = await db.batch([
     db.prepare(
       `SELECT id, external_id, stage, title, summary, reported_at, occurred_on, prefecture,
-              CASE WHEN ?2 = 1 THEN NULL ELSE city END AS city, police_agency, police_prefecture,
-              CASE WHEN ?2 = 1 THEN NULL ELSE police_station END AS police_station, prosecutor_office,
+              city, police_agency, police_prefecture, police_station, prosecutor_office,
               motive, weapon, accomplice_count, location_type,
               link_confidence, backfill, source_url, source_name,
               additional_sources, flags FROM reports WHERE case_id = ?1 ORDER BY reported_at`,
-    ).bind(kase.id, kase.is_juvenile),
+    ).bind(kase.id),
     db.prepare(
       `SELECT rc.report_id, rc.charge_text, rc.raw_text, rc.law_code, l.name AS law_name, rc.modifier FROM report_charges rc
        JOIN reports r ON r.id = rc.report_id LEFT JOIN laws l ON l.code = rc.law_code WHERE r.case_id = ? ORDER BY rc.seq`,
     ).bind(kase.id),
     db.prepare(
-      `SELECT p.report_id, p.gender, CASE WHEN ?2 = 1 THEN NULL ELSE p.age END AS age, p.age_group, p.juvenile_class, p.plea, p.occupation,
+      `SELECT p.report_id, p.gender, p.age, p.age_group, p.juvenile_class, p.plea, p.occupation,
               p.nationality, p.nationality_code, p.residence_status
        FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = ?1 ORDER BY p.seq`,
-    ).bind(kase.id, kase.is_juvenile),
+    ).bind(kase.id),
     db.prepare(
       `SELECT j.*, co.name AS court_name, co.level AS court_level FROM judgments j JOIN courts co ON co.id = j.court_id
        WHERE j.case_id = ? ORDER BY j.decided_on`,
@@ -240,10 +238,6 @@ app.get("/api/v1/cases/:id", async (c) => {
     })),
     judgments: ((judgments?.results ?? []) as Record<string, unknown>[]).map((j) => {
       const { person_ref: _omit, ...rest } = j; // 人物 ID は内部用なので出さない
-      if (kase.is_juvenile) {
-        rest.defendant_age = null;
-        rest.city = null;
-      }
       return {
         ...rest,
         charges: by(jc, "judgment_id", j.id),

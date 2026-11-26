@@ -165,26 +165,31 @@ describe("取り込み", () => {
     expect(res.results[0].errors[0].path).toBe("prefecture");
   });
 
-  it("少年事件では市区町村・正確な年齢を受け付けない", async () => {
-    const juv = { ...report.items[0], external_id: "juv-1", case_ref: "case-juv-1", is_juvenile: true };
+  it("少年事件でも市区町村・正確な年齢・警察署を受け付けて表示する（v0.17 の方針変更）", async () => {
+    const juv = {
+      ...report.items[0],
+      external_id: "juv-1",
+      case_ref: "case-juv-1",
+      is_juvenile: true,
+      police_station: "天満署",
+      suspects: [{ person_ref: "pj", gender: "male", age: 17 }],
+    };
     const res = (await (await signedIngest({ items: [juv] })).json()) as Json;
-    expect(res.rejected).toBe(1);
-    const paths = res.results[0].errors.map((e: Json) => e.path);
-    expect(paths).toContain("city");
-    expect(paths).toContain("suspects.0.age");
+    expect(res.rejected).toBe(0);
+    const detail = (await (await view("/api/v1/cases/case-juv-1")).json()) as Json;
+    expect(detail.case.is_juvenile).toBe(1);
+    expect(detail.case.city).toBe("大阪市");
+    expect(detail.reports[0].police_station).toBe("天満署");
+    expect(detail.reports[0].suspects[0]).toMatchObject({ age: 17, age_group: "10代", juvenile_class: "juvenile" });
   });
 
-  it("少年事件の判決は、後から is_juvenile を付け忘れても市区町村を出さない", async () => {
-    const { city: _c, suspects: _s, ...base } = report.items[0] as Json;
-    const juv = { ...base, external_id: "juv-2", case_ref: "case-juv-2", is_juvenile: true, suspects: [{ juvenile_class: "juvenile", gender: "male" }] };
+  it("少年事件の印は一度付いたら外さない", async () => {
+    const juv = { ...report.items[0], external_id: "juv-2", case_ref: "case-juv-2", is_juvenile: true };
     await signedIngest({ items: [juv] });
     const later = { ...report.items[0], external_id: "juv-3", case_ref: "case-juv-2", stage: "起訴", reported_at: "2026-04-01T10:00:00+09:00" };
     await signedIngest({ items: [later] });
     const detail = (await (await view("/api/v1/cases/case-juv-2")).json()) as Json;
     expect(detail.case.is_juvenile).toBe(1);
-    expect(detail.case.city).toBeNull();
-    expect(detail.reports.every((r: Json) => r.city === null)).toBe(true);
-    expect(detail.reports.flatMap((r: Json) => r.suspects).every((p: Json) => p.age === null)).toBe(true);
   });
 
   it("人名らしき表記があっても公開は止めず、flags を記録する", async () => {
@@ -259,15 +264,12 @@ describe("場所・捜査機関の保存", () => {
     expect(d3.case.prefecture).toBe("大阪府");
   });
 
-  it("少年事件では警察署名と判決の市区町村を受け付けない", async () => {
-    const { city: _c, suspects: _s, ...base } = report.items[0] as Json;
-    const r = { ...base, external_id: "ag-juv", case_ref: "case-ag-juv", is_juvenile: true, police_station: "天満署" };
-    const { defendant: _d, ...jb } = judgment.items[0] as Json;
-    const j = { ...jb, external_id: "ag-juv-j", case_ref: "case-ag-juv", is_juvenile: true, city: "大阪市" };
-    const res = (await (await signedIngest({ items: [r, j] })).json()) as Json;
-    expect(res.rejected).toBe(2);
-    expect(res.results[0].errors.map((e: Json) => e.path)).toContain("police_station");
-    expect(res.results[1].errors.map((e: Json) => e.path)).toContain("city");
+  it("少年事件の判決でも市区町村と年齢を保存する", async () => {
+    const j = { ...judgment.items[0], external_id: "ag-juv-j", case_ref: "case-ag-juv", is_juvenile: true, city: "大阪市", defendant: { gender: "male", age: 19 } };
+    const res = (await (await signedIngest({ items: [j] })).json()) as Json;
+    expect(res.rejected).toBe(0);
+    const d = (await (await view("/api/v1/cases/case-ag-juv")).json()) as Json;
+    expect(d.judgments[0]).toMatchObject({ city: "大阪市", defendant_age: 19, juvenile_class: "specified_juvenile" });
   });
 });
 
