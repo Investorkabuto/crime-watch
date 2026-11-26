@@ -21,6 +21,7 @@
 | GET | `/api/v1/judgments` | 閲覧 | 判決一覧（`law`, `judge`, `court`） |
 | GET | `/api/v1/admin/trial-stats` | 閲覧 | 試行の集計（項目の充足率、未分類率、件数など） |
 | POST | `/api/v1/admin/reclassify` | 閲覧 | 罪状辞書の更新後に罪状を判定し直す |
+| POST | `/api/v1/admin/rescan-flags` | 閲覧 | 自動チェックのルール変更後に、保存済みデータの検出結果を付け直す |
 
 ### 受信 API の署名
 

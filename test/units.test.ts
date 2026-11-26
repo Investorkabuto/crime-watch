@@ -53,6 +53,18 @@ describe("自動チェック", () => {
     const f = detectPii({ summary: "山田太郎容疑者（34）を逮捕。連絡先は03-1234-5678、住所は1丁目2番3号" }, false);
     expect(f.map((x) => x.kind).sort()).toEqual(["person_name", "phone", "street_address"]);
   });
+  it.each([
+    "和歌山地裁は被告に発作の認識があったと認定した",
+    "殺人罪に問われた被告について",
+    "会社役員の被告に懲役3年10月",
+    "那覇地裁の裁判員裁判は被告の殺意を認定",
+    "起訴された被告は否認",
+  ])("人名ではない表記を検出しない: %s", (summary) => {
+    expect(detectPii({ summary }, false)).toEqual([]);
+  });
+  it.each(["山田太郎被告に判決", "山田 太郎被告", "山田あやの被告", "佐藤容疑者を逮捕"])("人名は検出する: %s", (summary) => {
+    expect(detectPii({ summary }, false).map((f) => f.kind)).toContain("person_name");
+  });
   it("属性の表記は人名として扱わない", () => {
     expect(detectPii({ summary: "無職の男容疑者と会社員の女性被告" }, false)).toEqual([]);
   });

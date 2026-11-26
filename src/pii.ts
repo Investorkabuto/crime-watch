@@ -15,6 +15,9 @@ const NON_NAME_PREFIXES = [
   "長男", "長女", "次男", "次女", "祖父", "祖母", "孫",
 ];
 
+// 候補にこれらを含む場合は人名ではない（罪名・裁判所・捜査機関・述語）
+const NOT_NAME_WORDS = /(罪|裁判|地裁|高裁|家裁|簡裁|最高裁|警察|県警|府警|検察|地検|署|庁|問われ|起訴され|とされ|された|られた)/;
+
 const NAME_SUFFIX_RE = /([一-龯々ヶ]{1,4}[ 　]?[一-龯々ヶぁ-んァ-ヴー]{1,5})(容疑者|被告人|被告|受刑者|死刑囚|さん|氏|ちゃん|くん)/g;
 const PHONE_RE = /0\d{1,4}[-ー－]\d{1,4}[-ー－]\d{3,4}/g;
 const STREET_RE = /(\d+|[一二三四五六七八九十]+)丁目\d+(番地?|[-ー－]\d+)|\d+番地/g;
@@ -26,6 +29,11 @@ function scanNames(field: string, text: string, flags: Flag[]): void {
     const candidate = m[1] ?? "";
     // 直前語が人名でない語で終わる場合（「無職の男」→「男容疑者」等）は除外
     if (NON_NAME_PREFIXES.some((p) => candidate === p || candidate.endsWith(p))) continue;
+    // 「和歌山地裁は被告」「会社役員の被告」のように、漢字の語に助詞が付いて「被告」に続く形は人名ではない
+    // （「山田あやの被告」のように仮名を含む名前は対象外にしないため、漢字だけの語＋助詞 1 文字に限る）
+    if (/^[一-龯々ヶ]+[のはにをがでともへ]$/.test(candidate)) continue;
+    // 「殺人罪に問われた被告」「那覇地裁の被告」のように、罪名や機関名を含むものは人名ではない
+    if (NOT_NAME_WORDS.test(candidate)) continue;
     flags.push({ kind: "person_name", field, match: m[0] });
   }
 }
