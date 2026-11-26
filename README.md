@@ -41,7 +41,7 @@ X-CW-Signature: sha256=<signature>
 ## 開発
 
 ```bash
-npm install --legacy-peer-deps
+npm install        # .npmrc で legacy-peer-deps を有効にしている（npm の依存解決の不具合を避けるため）
 npm test          # JSON Schema の検証 + Workers 上のテスト
 npm run typecheck
 ```
