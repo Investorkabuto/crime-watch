@@ -1,6 +1,7 @@
 // 受信データの検証（schema/ingest.schema.json と同じ内容を zod で表現したもの）
 import { z } from "zod";
 import { RESIDENCE_STATUSES } from "./nationality";
+import { PUBLIC_FIGURES, THEMES } from "./themes";
 
 export const PREFECTURES = [
   "北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県",
@@ -36,7 +37,8 @@ const SENTENCE_TYPES = [
 const DEMAND_TYPES = ["死刑", "無期拘禁刑", "無期懲役", "無期禁錮", "拘禁刑", "懲役", "禁錮", "罰金", "拘留", "科料"] as const;
 
 // 粗い分類（記事に書かれる範囲。分からなければ送らない）
-export const OCCUPATIONS = ["会社員", "会社役員", "公務員", "自営業", "アルバイト・パート", "無職", "学生", "その他", "不明"] as const;
+// 教員・警察官・議員・医療従事者・介護・福祉職は「〇〇の犯罪」のテーマに使うため、公務員などと分けて持つ（§13.8）
+export const OCCUPATIONS = ["会社員", "会社役員", "公務員", "教員", "警察官", "議員", "医療従事者", "介護・福祉職", "自営業", "アルバイト・パート", "無職", "学生", "その他", "不明"] as const;
 export const VICTIM_RELATIONS = [
   "面識なし", "知人", "交際相手・元交際相手", "配偶者・元配偶者", "親族", "職場関係", "客・取引先", "その他", "不明",
 ] as const;
@@ -70,6 +72,8 @@ const person = z.strictObject({
   // 記事に明記された国籍だけを入れる（「ベトナム国籍」「ベトナム」など記事の表記でよい）。書かれていなければ送らない
   nationality: z.string().min(1).max(30).optional(),
   residence_status: z.enum(RESIDENCE_STATUSES).optional(),
+  // 著名人の区分。見出し・要約は「某歌手」のように書き、本名・芸名は送らない
+  public_figure: z.enum(PUBLIC_FIGURES).optional(),
 });
 
 const common = {
@@ -85,6 +89,8 @@ const common = {
   source_name: z.string().optional(),
   additional_sources: z.array(z.strictObject({ url, name: z.string().optional() })).optional(),
   victims: z.array(victim).max(100).optional(),
+  // 記事に書かれている場合だけ付けるテーマ（§13.8）
+  themes: z.array(z.enum(THEMES)).max(20).optional(),
   circumstances: circumstances.optional(),
 };
 

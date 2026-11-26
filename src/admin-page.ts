@@ -1,4 +1,6 @@
 // 管理画面（/admin）。ページ自体にデータは含まず、閲覧 API をトークン付きで呼び出す。
+import { THEMES } from "./themes";
+
 export const ADMIN_PAGE = /* html */ `<!doctype html>
 <html lang="ja">
 <head>
@@ -95,6 +97,10 @@ a { color: var(--accent); }
           <option value="all">公開・非公開すべて</option>
           <option value="">公開中のみ</option>
           <option value="hidden">非公開のみ</option>
+        </select>
+        <select name="theme">
+          <option value="">すべてのテーマ</option>
+          ${THEMES.map((t) => `<option>${t}</option>`).join("")}
         </select>
         <select name="progress">
           <option value="">すべての進み具合</option>
@@ -238,6 +244,10 @@ a { color: var(--accent); }
       '<div class="panel"><h2>罪状の判定</h2><p>罪状 ' + esc(s.charges.total) + " 件のうち、未分類 " + esc(s.charges.unclassified) + " 件（" + pct(s.charges.unclassified_rate) + "）。要確認（未確認）" + esc((s.flagged.reports || 0) + (s.flagged.judgments || 0)) + " 件、確認済み " + esc(s.flagged.reviewed || 0) + " 件。</p>" +
       '<p class="muted">法律マスタ・罪状辞書を D1 コンソールで更新したときや、アプリの更新で判定・自動チェックのルールが変わったときは、保存済みのデータに反映させるため、次のボタンを押してください。</p>' +
       '<div class="row" style="margin:0"><button class="btn" id="btnReclassify">罪状を判定し直す</button><button class="btn" id="btnRescan">自動チェックをやり直す</button><span class="muted" id="maintMsg"></span></div></div>' +
+      '<div class="panel"><h2>テーマ別</h2><p class="muted">データから自動で判定したものと、Muse が記事から付けたもの（✎）の合計です。テーマを押すと、そのテーマの事件一覧を開きます。</p>' +
+      (s.themes.length === 0 ? '<p class="muted">まだありません。</p>' :
+        '<div class="row">' + s.themes.map((t) => '<a href="#" class="tag" data-theme="' + esc(t.theme) + '">#' + esc(t.theme) + " " + t.cases + (t.muse ? " ✎" + t.muse : "") + "</a>").join("") + "</div>") +
+      '<div class="row" style="margin:8px 0 0"><button class="btn" id="btnThemes">テーマを付け直す</button></div></div>' +
       '<div class="panel"><h2>法律別</h2><table><thead><tr><th>法律</th><th class="num">事件（報道）</th><th class="num">判決</th></tr></thead><tbody>' +
       s.by_law.map((r) => "<tr><td>" + esc(r.name) + '</td><td class="num">' + esc(r.report_cases) + '</td><td class="num">' + esc(r.judgments) + "</td></tr>").join("") +
       "</tbody></table></div>" +
@@ -249,7 +259,7 @@ a { color: var(--accent); }
       $("#maintMsg").textContent = label + "中…";
       try {
         const r = await api(path, { method: "POST" });
-        const L = { changed: "変わった件数", judgments_recomputed: "計算し直した判決", checked: "確認した件数", flagged: "要確認" };
+        const L = { changed: "変わった件数", judgments_recomputed: "計算し直した判決", checked: "確認した件数", flagged: "要確認", themes: "テーマの数" };
         $("#maintMsg").textContent = label + "が終わりました（" + Object.entries(r).map(([k, v]) => (L[k] || k) + " " + v).join("、") + "）";
         refreshBadges();
       } catch (err) { $("#maintMsg").textContent = label + "に失敗しました：" + (err.message || err); }
@@ -257,6 +267,7 @@ a { color: var(--accent); }
     };
     $("#btnReclassify").onclick = (e) => run(e.target, "/api/v1/admin/reclassify", "罪状の判定し直し");
     $("#btnRescan").onclick = (e) => run(e.target, "/api/v1/admin/rescan-flags", "自動チェックのやり直し");
+    $("#btnThemes").onclick = async (e) => { await run(e.target, "/api/v1/admin/recompute-themes", "テーマの付け直し"); renderStats(); };
   }
 
   // ===== 事件 =====
@@ -288,7 +299,8 @@ a { color: var(--accent); }
         '</td><td class="hide-sm">' + esc(c.progress || "") + daysSince(c) + "</td><td>" + esc(c.title) +
         '</td><td class="hide-sm">' + esc(c.prefecture) + (c.city ? " " + esc(c.city) : "") + "</td><td>" +
         (c.flagged ? '<span class="tag warn">要確認</span>' : "") + (c.status === "hidden" ? '<span class="tag danger">非公開</span>' : "") +
-        (c.is_juvenile ? '<span class="tag">少年</span>' : "") + (c.backfill ? '<span class="tag">過去分</span>' : "") + "</td></tr>").join("") +
+        (c.is_juvenile ? '<span class="tag">少年</span>' : "") + (c.backfill ? '<span class="tag">過去分</span>' : "") +
+        (c.themes || []).map((t) => '<span class="tag">#' + esc(t) + "</span>").join("") + "</td></tr>").join("") +
       "</tbody></table>");
   }
   document.addEventListener("click", (e) => {
@@ -324,7 +336,8 @@ a { color: var(--accent); }
       if (e.kind === "report") {
         const r = e.r, flags = parse(r.flags);
         const sus = (r.suspects || []).map((p) => [GENDER[p.gender] || "", p.age != null ? p.age + "歳" : p.age_group || "", p.occupation || "",
-          p.nationality ? p.nationality + "国籍" + (p.residence_status ? "（" + p.residence_status + "）" : "") : (p.residence_status || ""), p.plea ? { admit: "認めている", deny: "否認", partial: "一部否認", unknown: "" }[p.plea] : ""].filter(Boolean).join("・")).filter(Boolean).join(" / ");
+          p.nationality ? p.nationality + "国籍" + (p.residence_status ? "（" + p.residence_status + "）" : "") : (p.residence_status || ""),
+          p.public_figure ? "著名人（某" + p.public_figure + "）" : "", p.plea ? { admit: "認めている", deny: "否認", partial: "一部否認", unknown: "" }[p.plea] : ""].filter(Boolean).join("・")).filter(Boolean).join(" / ");
         return '<div class="ev"><div class="when">' + esc(r.reported_at.slice(0, 16).replace("T", " ")) + " 報道（" + esc(r.stage) + ")" + (r.link_confidence === "low" ? ' <span class="tag warn">ひも付けの確度：低</span>' : "") + "</div>" +
           "<div><b>" + highlight(r.title, flags) + "</b></div><div>" + highlight(r.summary, flags) + "</div>" + flagTags(flags) +
           '<dl class="kv">' +
@@ -341,6 +354,7 @@ a { color: var(--accent); }
       const demand = j.demand_type ? esc(j.demand_type) + (j.demand_months != null ? " " + months(j.demand_months) : "") : "";
       const judges = (j.judges || []).map((g) => esc(g.name) + "（" + esc(g.role) + "）").join("、");
       const def = [GENDER[j.defendant_gender] ? GENDER[j.defendant_gender] + (j.gender_inherited ? "（逮捕報道から）" : "") : "", j.defendant_age != null ? j.defendant_age + "歳" : j.defendant_age_group || "", j.defendant_occupation || "",
+        j.defendant_public_figure ? "著名人（某" + j.defendant_public_figure + "）" : "",
         j.defendant_nationality ? j.defendant_nationality + "国籍" + (j.defendant_residence_status ? "（" + j.defendant_residence_status + "）" : "") + (j.nationality_inherited ? "（逮捕報道から）" : "") : ""].filter(Boolean).join("・");
       return '<div class="ev judgment"><div class="when">' + esc(j.decided_on) + " 判決" + (j.instance ? "（" + esc(j.instance) + "）" : "") + " " + esc(j.court_name) + (j.lay_judge_trial ? ' <span class="tag">裁判員裁判</span>' : "") + "</div>" +
         "<div><b>" + highlight(j.title, flags) + "</b></div><div>" + highlight(j.summary, flags) + "</div>" + flagTags(flags) +
@@ -363,6 +377,7 @@ a { color: var(--accent); }
       '<button class="btn ' + (hidden ? "primary" : "danger") + '" id="toggleStatus">' + (hidden ? "公開に戻す" : "非公開にする") + "</button></div>" +
       '<div class="panel"><h2>' + esc(k.title) + "</h2>" +
       (hidden ? '<span class="tag danger">非公開</span>' : "") + (k.is_juvenile ? '<span class="tag">少年事件</span>' : "") + (k.flagged ? '<span class="tag warn">要確認</span>' : "") +
+      '<div style="margin-top:6px">' + (k.themes || []).map((t) => '<span class="tag" title="' + (t.source === "auto" ? "データから自動で判定" : "Muse が記事から付けた") + '">#' + esc(t.theme) + (t.source === "auto" ? "" : " ✎") + "</span>").join("") + "</div>" +
       '<dl class="kv"><dt>case_ref</dt><dd>' + esc(k.case_ref) + "</dd><dt>最新の段階</dt><dd>" + esc(k.latest_stage) + (k.progress ? "（" + esc(k.progress) + "）" : "") + "</dd><dt>発生</dt><dd>" + esc([k.occurred_on, k.prefecture, k.city].filter(Boolean).join(" ")) + "</dd></dl></div>" +
       '<div class="panel"><h2>時系列</h2><div class="timeline">' + evHtml + "</div></div>";
     $("#detail").style.display = "block";
@@ -407,6 +422,16 @@ a { color: var(--accent); }
         '</td><td class="hide-sm">' + r.by_group.slice(0, 3).map((g) => '<span class="tag">' + esc(g.group_name) + " " + g.cases + "</span>").join("") + "</td></tr>").join("") +
       "</tbody></table></div>");
   }
+  // 集計タブのテーマを押したら、そのテーマの事件一覧を開く
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a[data-theme]"); if (!a) return;
+    e.preventDefault();
+    const f = $("#caseFilter");
+    f.reset();
+    f.querySelector("select[name=theme]").value = a.dataset.theme;
+    f.querySelector("select[name=status]").value = "";
+    document.querySelector('#tabs button[data-tab=cases]').click();
+  });
   document.addEventListener("click", (e) => {
     const tr = e.target.closest("tr.click-pref"); if (!tr || !prefData) return;
     const f = $("#caseFilter");
