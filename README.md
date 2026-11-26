@@ -5,7 +5,7 @@
 
 - 要件定義書: [`docs/requirements.md`](docs/requirements.md)
 - 受信データの形式: [`schema/ingest.schema.json`](schema/ingest.schema.json)（例: [`schema/examples/`](schema/examples/)）
-- 実行環境: Cloudflare Workers（Hono）+ D1 + R2
+- 実行環境: Cloudflare Workers（Hono）+ D1（受信した原本も D1 に保存）
 
 現在は**試行（非公開でのデータ蓄積）**の段階（要件 §12）。閲覧 API には `VIEWER_TOKEN` が必要。
 
@@ -49,8 +49,7 @@ npm run typecheck
 ## Cloudflare への初回セットアップ
 
 ```bash
-npx wrangler d1 create crime-watch          # 表示された database_id を wrangler.jsonc に書く
-npx wrangler r2 bucket create crime-watch-raw
+# D1 データベース crime-watch は作成済み（database_id は wrangler.jsonc に記載）
 npx wrangler secret put INGEST_TOKEN
 npx wrangler secret put INGEST_HMAC_SECRET
 npx wrangler secret put VIEWER_TOKEN

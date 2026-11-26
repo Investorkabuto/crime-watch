@@ -118,11 +118,12 @@ describe("取り込み", () => {
     expect(res.results[0].unclassified_charges).toEqual(["組織犯罪処罰法"]);
   });
 
-  it("原本を R2 に保存し、受信ログを残す", async () => {
+  it("受信ログと原本を D1 に保存する", async () => {
     const res = (await (await signedIngest(report)).json()) as Json;
-    const log = await env.DB.prepare("SELECT r2_key FROM ingest_logs WHERE id = ?").bind(res.ingest_id).first<{ r2_key: string }>();
-    const obj = await env.RAW.get(log!.r2_key);
-    expect(JSON.parse(await obj!.text())).toEqual(report);
+    const log = await env.DB.prepare("SELECT item_count FROM ingest_logs WHERE id = ?").bind(res.ingest_id).first<{ item_count: number }>();
+    expect(log?.item_count).toBe(1);
+    const raw = await env.DB.prepare("SELECT body FROM raw_payloads WHERE ingest_id = ?").bind(res.ingest_id).first<{ body: string }>();
+    expect(JSON.parse(raw!.body)).toEqual(report);
   });
 });
 

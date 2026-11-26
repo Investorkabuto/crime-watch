@@ -1,4 +1,4 @@
-# Crime Watch 要件定義書（ドラフト v0.6）
+# Crime Watch 要件定義書（ドラフト v0.7）
 
 最終更新: 2026-11-26
 ステータス: たたき台（「未決事項」の回答を受けて更新する）
@@ -12,6 +12,7 @@
 | v0.4 | 2026-11-26 | Muse（もち）の試し取り結果を反映。交通事件の対象範囲を確定。過去データの取り込み（F10）を追加。事件のひも付けに氏名のハッシュを Muse 側でのみ使う方式に確定（§9-11）。受信データに `link_confidence`・`reported_at`・`additional_sources`・`backfill` を追加し、審級を任意に。法定刑を時期ごとに持つ形に変更。量刑指標の補正方針と全罪名まとめた集計を見直し（§6） |
 | v0.5 | 2026-11-26 | 試行は非公開で行うことに確定。過去データの取り込み範囲を 2026年1月1日以降に確定。試行の対象犯罪（5 分類）を確定（§12）。受信データの JSON Schema（`schema/ingest.schema.json`）を追加 |
 | v0.6 | 2026-11-26 | 氏名ハッシュの削除期限を確定（§9-11）。過去分の取り込み上限を 1 日 30 件で開始（§12.1）。有料の新聞記事データベースは使わない（§12.1） |
+| v0.7 | 2026-11-26 | 受信した原本の保存先を R2 から D1 に変更（R2 は使わない） |
 
 ---
 
@@ -58,13 +59,14 @@
  └──────────┘                                │  - スキーマ検証・正規化         │
                                              │  - 罪状 → 法律の自動判定        │
                                              │  - 事件・判決のひも付け         │
-                                             └──────┬───────────────┬────────┘
-                                                    │               │ 受信データ原本
-                                                    ▼               ▼
-                                             ┌────────────┐   ┌────────────┐
-                                             │ D1 (SQLite) │   │ R2         │
-                                             │ 事件・判決   │   │ 原本JSON    │
-                                             │ 法律・裁判官 │   └────────────┘
+                                             └──────┬────────────────────────┘
+                                                    │ 事件・判決・受信データの原本
+                                                    ▼
+                                             ┌────────────┐
+                                             │ D1 (SQLite) │
+                                             │ 事件・判決   │
+                                             │ 法律・裁判官 │
+                                             │ 原本JSON     │
                                              │ 量刑指標     │◀── Cron Triggers（指標の再計算）
                                              └─────┬──────┘
                                                    │
@@ -82,7 +84,7 @@
 | 実行環境 | Cloudflare Workers（TypeScript） | API と公開サイト |
 | Web フレームワーク | Hono | ルーティング・ミドルウェア |
 | DB | Cloudflare D1 | 事件・判決・法律マスタ・裁判官・集計結果 |
-| オブジェクトストレージ | Cloudflare R2 | 受信した JSON の原本（監査・再処理用） |
+| 原本の保存 | Cloudflare D1（`raw_payloads`） | 受信した JSON の原本（監査・再処理用）。量が小さいため R2 は使わない |
 | 画面 | Workers Static Assets（SSR か SPA かは未決） | 公開サイト |
 | 管理者認証 | Cloudflare Access | /admin の保護 |
 | 定期処理 | Cron Triggers | 量刑指標の再計算、日次集計、未分類罪状の集計 |
@@ -99,7 +101,7 @@
 - 認証: Bearer トークン（Workers Secret に保存）。可能なら HMAC 署名も検証する
 - **冪等性**: `external_id`（Muse 側 ID）で重複を判定し、同じ ID は更新として扱う。再送しても二重登録にならない
 - レスポンスで件ごとの結果（`created` / `updated` / `rejected` と理由）を返す
-- 受信データは原本のまま R2 に保存する
+- 受信データは原本のまま D1 に保存する（`raw_payloads`。v0.7 で R2 から変更）
 
 ### F2. 検証・正規化
 - 必須項目の確認と型の検証（スキーマは §5）
@@ -422,7 +424,14 @@ CREATE TABLE ingest_logs (
   created     INTEGER NOT NULL,
   updated     INTEGER NOT NULL,
   rejected    INTEGER NOT NULL,
-  r2_key      TEXT NOT NULL
+  flagged     INTEGER NOT NULL
+);
+
+-- 受信した原本（監査・再処理用）
+CREATE TABLE raw_payloads (
+  ingest_id   TEXT PRIMARY KEY REFERENCES ingest_logs(id),
+  received_at TEXT NOT NULL,
+  body        TEXT NOT NULL
 );
 ```
 
@@ -647,9 +656,9 @@ CREATE TABLE ingest_logs (
 | 集計 | 量刑指標は Cron で定期的に（例: 1 時間ごと）再計算し、集計テーブルから表示する |
 | 可用性 | Cloudflare のサービスレベルに従う。受信に失敗したら Muse 側で再送する（冪等なので再送しても安全） |
 | セキュリティ | 受信 API はトークン認証＋レート制限。管理画面は Cloudflare Access。秘密情報は Workers Secrets |
-| 監査 | 受信原本を R2 に保存。管理者の操作ログを残す |
+| 監査 | 受信原本を D1 に保存。管理者の操作ログを残す |
 | データ保持 | 保持期間は未決（§10） |
-| コスト | まずは Workers / D1 / R2 の無料枠〜有料プランの最小構成で運用 |
+| コスト | まずは Workers / D1 の無料枠で運用 |
 | 運用 | wrangler で環境を分ける（dev / prod）、GitHub Actions でデプロイ |
 
 ---

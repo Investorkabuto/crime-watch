@@ -209,6 +209,12 @@ CREATE TABLE ingest_logs (
   created     INTEGER NOT NULL,
   updated     INTEGER NOT NULL,
   rejected    INTEGER NOT NULL,
-  flagged     INTEGER NOT NULL,
-  r2_key      TEXT NOT NULL
+  flagged     INTEGER NOT NULL
+);
+
+-- 受信した原本（監査・再処理用）。リクエスト本文をそのまま保存する
+CREATE TABLE raw_payloads (
+  ingest_id   TEXT PRIMARY KEY REFERENCES ingest_logs(id),
+  received_at TEXT NOT NULL,
+  body        TEXT NOT NULL
 );

@@ -7,7 +7,8 @@ import { MAX_ITEMS } from "./schema";
 import { nowIso } from "./normalize";
 import { trialStats } from "./stats";
 
-const MAX_BODY_BYTES = 2 * 1024 * 1024;
+// D1 の 1 行あたりの上限（約 2MB）に収まるよう、原本の保存を考えて 1MB までにする
+const MAX_BODY_BYTES = 1024 * 1024;
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -39,11 +40,8 @@ app.post("/api/v1/ingest", async (c) => {
   if (!Array.isArray(items) || items.length === 0) return c.json({ error: "items_required" }, 400);
   if (items.length > MAX_ITEMS) return c.json({ error: "too_many_items", max: MAX_ITEMS }, 400);
 
-  // 原本を R2 に保存（監査・再処理用）
   const logId = crypto.randomUUID();
   const receivedAt = nowIso();
-  const r2Key = `raw/${receivedAt.slice(0, 10)}/${logId}.json`;
-  await c.env.RAW.put(r2Key, body, { httpMetadata: { contentType: "application/json" } });
 
   const dict = await loadDictionary(c.env.DB);
   const results: ItemResult[] = [];
@@ -67,11 +65,13 @@ app.post("/api/v1/ingest", async (c) => {
     rejected: count("rejected"),
     flagged: results.filter((r) => r.flags).length,
   };
-  await c.env.DB.prepare(
-    "INSERT INTO ingest_logs (id, received_at, item_count, created, updated, rejected, flagged, r2_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  )
-    .bind(logId, receivedAt, items.length, summary.created, summary.updated, summary.rejected, summary.flagged, r2Key)
-    .run();
+  // 受信ログと原本（監査・再処理用）を保存する
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "INSERT INTO ingest_logs (id, received_at, item_count, created, updated, rejected, flagged) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).bind(logId, receivedAt, items.length, summary.created, summary.updated, summary.rejected, summary.flagged),
+    c.env.DB.prepare("INSERT INTO raw_payloads (ingest_id, received_at, body) VALUES (?, ?, ?)").bind(logId, receivedAt, body),
+  ]);
   return c.json({ ingest_id: logId, ...summary, results });
 });
 
