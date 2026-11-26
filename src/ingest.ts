@@ -363,17 +363,19 @@ export async function refreshCase(db: D1Database, caseId: string, now: string): 
   const [reports, judgments] = await db.batch([
     db.prepare(
       `SELECT r.stage, r.title, r.summary, r.reported_at AS at, r.occurred_on, r.prefecture, r.city, r.backfill, r.flags,
+              CASE WHEN r.flags IS NOT NULL AND NOT EXISTS (SELECT 1 FROM flag_reviews fr WHERE fr.parent_type = 'report' AND fr.parent_id = r.id AND fr.reviewed_flags = r.flags) THEN 1 ELSE 0 END AS pending,
               (SELECT COUNT(*) FROM report_persons p WHERE p.report_id = r.id AND p.juvenile_class IN ('juvenile','specified_juvenile')) AS juv
        FROM reports r WHERE r.case_id = ?`,
     ).bind(caseId),
     db.prepare(
       `SELECT j.appeal_status, j.title, j.summary, j.decided_on AS at, j.occurred_on, j.prefecture, j.city,
               c.prefecture AS court_prefecture, j.backfill, j.flags,
+              CASE WHEN j.flags IS NOT NULL AND NOT EXISTS (SELECT 1 FROM flag_reviews fr WHERE fr.parent_type = 'judgment' AND fr.parent_id = j.id AND fr.reviewed_flags = j.flags) THEN 1 ELSE 0 END AS pending,
               CASE WHEN j.juvenile_class IN ('juvenile','specified_juvenile') THEN 1 ELSE 0 END AS juv
        FROM judgments j JOIN courts c ON c.id = j.court_id WHERE j.case_id = ?`,
     ).bind(caseId),
   ]);
-  type Ev = { stage: string; title: string; summary: string; at: string; occurred_on: string | null; prefecture: string | null; city: string | null; court_prefecture?: string | null; backfill: number; flags: string | null; juv: number };
+  type Ev = { stage: string; title: string; summary: string; at: string; occurred_on: string | null; prefecture: string | null; city: string | null; court_prefecture?: string | null; backfill: number; flags: string | null; pending: number; juv: number };
   const events: Ev[] = [
     ...((reports?.results ?? []) as Ev[]),
     ...((judgments?.results ?? []) as (Omit<Ev, "stage"> & { appeal_status: string })[]).map((j) => ({
@@ -400,7 +402,7 @@ export async function refreshCase(db: D1Database, caseId: string, now: string): 
     )
     .bind(
       caseId, latest.title, latest.summary, latest.stage, key(latest), occurred, prefecture, city, juvenile ? 1 : 0,
-      events.every((e) => e.backfill === 1) ? 1 : 0, events.some((e) => e.flags) ? 1 : 0, now,
+      events.every((e) => e.backfill === 1) ? 1 : 0, events.some((e) => e.pending === 1) ? 1 : 0, now,
     )
     .run();
 }

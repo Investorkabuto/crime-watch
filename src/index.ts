@@ -7,7 +7,7 @@ import { nowIso } from "./normalize";
 import { trialStats } from "./stats";
 import { checkDatabase } from "./dbcheck";
 import { rescanFlags } from "./rescan";
-import { addAlias, listFlagged, reclassifyAll, setCaseStatus } from "./admin";
+import { addAlias, listFlagged, reclassifyAll, reviewFlag, setCaseStatus } from "./admin";
 import { ADMIN_PAGE } from "./admin-page";
 import { PREF_EXPR, prefectureStats, type PrefBasis } from "./prefstats";
 
@@ -297,7 +297,19 @@ app.get("/api/v1/admin/prefecture-stats", async (c) => {
   return c.json(await prefectureStats(c.env.DB, { basis: q.basis as PrefBasis, from: q.from, to: q.to, law: q.law }));
 });
 
-app.get("/api/v1/admin/flagged", async (c) => c.json({ items: await listFlagged(c.env.DB) }));
+app.get("/api/v1/admin/flagged", async (c) =>
+  c.json({ items: await listFlagged(c.env.DB, { reviewed: c.req.query("reviewed") === "true" }) }),
+);
+
+/** 検出を確認済みにする（{type, id, note?}）、または取り消す（{type, id, undo: true}） */
+app.post("/api/v1/admin/flag-reviews", async (c) => {
+  const b = (await c.req.json().catch(() => ({}))) as { type?: string; id?: string; undo?: boolean; note?: string };
+  if ((b.type !== "report" && b.type !== "judgment") || !b.id) return c.json({ error: "type_and_id_required" }, 400);
+  const r = await reviewFlag(c.env.DB, b.type, b.id, { undo: b.undo === true, note: b.note });
+  if (r === "not_found") return c.json({ error: "not_found" }, 404);
+  if (r === "no_flags") return c.json({ error: "no_flags" }, 400);
+  return c.json({ ok: true });
+});
 
 app.post("/api/v1/admin/cases/:id/status", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { status?: string };

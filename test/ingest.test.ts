@@ -364,6 +364,53 @@ describe("管理 API と管理画面", () => {
   });
 });
 
+describe("要確認の確認済み", () => {
+  const post = (path: string, body: unknown) =>
+    SELF.fetch(`https://cw.test${path}`, {
+      method: "POST",
+      headers: { Authorization: "Bearer test-viewer-token", "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const pending = async () => ((await (await view("/api/v1/admin/flagged")).json()) as Json).items as Json[];
+  const reviewed = async () => ((await (await view("/api/v1/admin/flagged?reviewed=true")).json()) as Json).items as Json[];
+  const caseFlag = async () => (await env.DB.prepare("SELECT flagged FROM cases WHERE case_ref = 'case-rv'").first<Json>())?.flagged;
+
+  it("確認済みにすると一覧と事件の印から外れ、自動チェックをやり直しても残り、内容が変わると戻る", async () => {
+    const item = { ...report.items[0], external_id: "rv-1", case_ref: "case-rv", summary: "山田太郎容疑者を逮捕" };
+    await signedIngest({ items: [item] });
+    const it = (await pending()).find((x) => x.external_id === "rv-1")!;
+    expect(it).toBeTruthy();
+    expect(await caseFlag()).toBe(1);
+
+    expect((await post("/api/v1/admin/flag-reviews", { type: "report", id: it.id, note: "同名の別人ではなく誤検出" })).status).toBe(200);
+    expect((await pending()).some((x) => x.external_id === "rv-1")).toBe(false);
+    const rv = (await reviewed()).find((x) => x.external_id === "rv-1")!;
+    expect(rv.note).toBe("同名の別人ではなく誤検出");
+    expect(await caseFlag()).toBe(0);
+
+    // 自動チェックをやり直しても、検出内容が同じなら確認済みのまま
+    await post("/api/v1/admin/rescan-flags", {});
+    expect((await pending()).some((x) => x.external_id === "rv-1")).toBe(false);
+
+    // 送り直しで検出内容が変わったら、未確認に戻る
+    await signedIngest({ items: [{ ...item, summary: "佐藤花子容疑者を逮捕" }] });
+    expect((await pending()).some((x) => x.external_id === "rv-1")).toBe(true);
+    expect(await caseFlag()).toBe(1);
+
+    // 確認と取り消し
+    await post("/api/v1/admin/flag-reviews", { type: "report", id: it.id });
+    expect(await caseFlag()).toBe(0);
+    await post("/api/v1/admin/flag-reviews", { type: "report", id: it.id, undo: true });
+    expect((await pending()).some((x) => x.external_id === "rv-1")).toBe(true);
+    expect(await caseFlag()).toBe(1);
+  });
+
+  it("不正な指定は断る", async () => {
+    expect((await post("/api/v1/admin/flag-reviews", { type: "x", id: "y" })).status).toBe(400);
+    expect((await post("/api/v1/admin/flag-reviews", { type: "report", id: "nope" })).status).toBe(404);
+  });
+});
+
 describe("都道府県別の集計", () => {
   it("発生地・警察・裁判所の基準で数え、判決の指標を出す", async () => {
     // 発生は奈良県、捜査は大阪府警、判決は大阪地裁

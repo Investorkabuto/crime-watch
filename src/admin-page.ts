@@ -213,7 +213,7 @@ a { color: var(--accent); }
       '<div class="panel"><h2>判決の項目ごとの取れた割合（' + esc(f.n ?? 0) + ' 件中）</h2><table><tbody>' +
       fillRows.map(([k, v]) => "<tr><td>" + k + '</td><td class="num" style="width:60px">' + pct(v) + '</td><td style="width:40%"><div class="bar"><i style="width:' + Math.round((v || 0) * 100) + '%"></i></div></td></tr>').join("") +
       "</tbody></table></div>" +
-      '<div class="panel"><h2>罪状の判定</h2><p>罪状 ' + esc(s.charges.total) + " 件のうち、未分類 " + esc(s.charges.unclassified) + " 件（" + pct(s.charges.unclassified_rate) + "）。要確認 " + esc((s.flagged.reports || 0) + (s.flagged.judgments || 0)) + " 件。</p>" +
+      '<div class="panel"><h2>罪状の判定</h2><p>罪状 ' + esc(s.charges.total) + " 件のうち、未分類 " + esc(s.charges.unclassified) + " 件（" + pct(s.charges.unclassified_rate) + "）。要確認（未確認）" + esc((s.flagged.reports || 0) + (s.flagged.judgments || 0)) + " 件、確認済み " + esc(s.flagged.reviewed || 0) + " 件。</p>" +
       '<p class="muted">法律マスタ・罪状辞書を D1 コンソールで更新したときや、アプリの更新で判定・自動チェックのルールが変わったときは、保存済みのデータに反映させるため、次のボタンを押してください。</p>' +
       '<div class="row" style="margin:0"><button class="btn" id="btnReclassify">罪状を判定し直す</button><button class="btn" id="btnRescan">自動チェックをやり直す</button><span class="muted" id="maintMsg"></span></div></div>' +
       '<div class="panel"><h2>法律別</h2><table><thead><tr><th>法律</th><th class="num">事件（報道）</th><th class="num">判決</th></tr></thead><tbody>' +
@@ -398,17 +398,51 @@ a { color: var(--accent); }
   });
 
   // ===== 要確認 =====
+  let showReviewed = false;
   async function renderFlagged() {
-    const r = await api("/api/v1/admin/flagged");
-    $("#flagCount").textContent = r.items.length;
-    $("#tab-flagged").innerHTML = '<div class="panel"><h2>自動チェックに引っかかった報道・判決（' + r.items.length + ' 件）</h2>' +
-      '<p class="muted">印の付いた部分を確認し、実名など公開できない情報が含まれていれば事件を非公開にしてください。誤検出のときはそのままで構いません。</p>' +
+    const r = await api("/api/v1/admin/flagged" + (showReviewed ? "?reviewed=true" : ""));
+    if (!showReviewed) $("#flagCount").textContent = r.items.length;
+    // UTC（…Z）の時刻は日本時間に直して表示する
+    const fmt = (v) => {
+      const t = String(v || "");
+      if (/Z$/.test(t)) {
+        const d = new Date(Date.parse(t) + 9 * 3600 * 1000).toISOString();
+        return esc(d.slice(0, 16).replace("T", " "));
+      }
+      return esc(t.slice(0, 16).replace("T", " "));
+    };
+    $("#tab-flagged").innerHTML = '<div class="panel">' +
+      '<div class="row"><button class="btn' + (showReviewed ? "" : " primary") + '" data-show="pending">未確認</button>' +
+      '<button class="btn' + (showReviewed ? " primary" : "") + '" data-show="reviewed">確認済み</button></div>' +
+      "<h2>" + (showReviewed ? "確認済みの報道・判決" : "自動チェックに引っかかった報道・判決") + "（" + r.items.length + " 件）</h2>" +
+      '<p class="muted">' + (showReviewed
+        ? "問題なしと確認したものです。送り直しなどで検出内容が変わると、未確認に戻ります。"
+        : "印の付いた部分を確認してください。実名など公開できない情報があれば「事件を開く」から非公開にします。問題がなければ「確認済み」を押すと、この一覧から外れます。") + "</p>" +
       (r.items.length === 0 ? '<p class="muted">ありません。</p>' :
-        r.items.map((it) => '<div class="panel"><div class="when muted">' + esc(String(it.at || "").slice(0, 16).replace("T", " ")) + " " + (it.type === "report" ? "報道" : "判決") + " " + esc(it.external_id) +
-          (it.status === "hidden" ? ' <span class="tag danger">非公開</span>' : "") + "</div>" +
+        r.items.map((it) => '<div class="panel"><div class="when muted">' + fmt(it.at) + " " + (it.type === "report" ? "報道" : "判決") + " " + esc(it.external_id) +
+          (it.status === "hidden" ? ' <span class="tag danger">非公開</span>' : "") +
+          (showReviewed && it.reviewed_at ? " ／ 確認：" + fmt(it.reviewed_at) : "") + "</div>" +
           "<div><b>" + highlight(it.title, it.flags) + "</b></div><div>" + highlight(it.summary, it.flags) + "</div>" + flagTags(it.flags) +
-          '<div style="margin-top:8px"><a href="#" data-case="' + esc(it.case_id) + '">事件を開く</a></div></div>').join("")) + "</div>";
+          (showReviewed && it.note ? '<div class="muted">メモ：' + esc(it.note) + "</div>" : "") +
+          '<div class="row" style="margin:8px 0 0"><a href="#" data-case="' + esc(it.case_id) + '">事件を開く</a><span style="flex:1"></span>' +
+          (showReviewed
+            ? '<button class="btn" data-review="undo" data-type="' + esc(it.type) + '" data-id="' + esc(it.id) + '">確認を取り消す</button>'
+            : '<input data-note-for="' + esc(it.id) + '" placeholder="メモ（任意）" size="20"><button class="btn primary" data-review="ok" data-type="' + esc(it.type) + '" data-id="' + esc(it.id) + '">確認済み（問題なし）</button>') +
+          "</div></div>").join("")) + "</div>";
   }
+  document.addEventListener("click", async (e) => {
+    const sw = e.target.closest("#tab-flagged [data-show]");
+    if (sw) { showReviewed = sw.dataset.show === "reviewed"; renderFlagged(); return; }
+    const b = e.target.closest("#tab-flagged [data-review]");
+    if (!b) return;
+    b.disabled = true;
+    const noteEl = document.querySelector('[data-note-for="' + CSS.escape(b.dataset.id) + '"]');
+    try {
+      await api("/api/v1/admin/flag-reviews", { method: "POST", body: JSON.stringify({ type: b.dataset.type, id: b.dataset.id, undo: b.dataset.review === "undo", note: noteEl && noteEl.value ? noteEl.value : undefined }) });
+      await renderFlagged();
+      refreshBadges();
+    } catch (err) { msg(String(err.message || err), true); b.disabled = false; }
+  });
 
   // ===== 未分類の罪状 =====
   async function renderUnclassified() {
