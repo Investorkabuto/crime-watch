@@ -155,7 +155,7 @@
       }
     },
     "report": {
-      "description": "事件の報道（発生・逮捕・再逮捕・送検・起訴）",
+      "description": "事件の報道（発生・逮捕・再逮捕・送検・起訴・控訴・上告・確定）",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -234,8 +234,12 @@
             "逮捕",
             "再逮捕",
             "送検",
-            "起訴"
-          ]
+            "起訴",
+            "控訴",
+            "上告",
+            "確定"
+          ],
+          "description": "報道の段階。控訴・上告・確定は「控訴した」「判決が確定した」などの報道に使う（判決そのものは judgment で送る）"
         },
         "reported_at": {
           "$ref": "#/$defs/dateTime"

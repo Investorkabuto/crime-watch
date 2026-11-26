@@ -111,6 +111,27 @@ describe("取り込み", () => {
     expect(row?.ratio_to_demand).toBe(0.75);
   });
 
+  it("時系列: 一審判決 → 控訴の報道 → 控訴審判決 → 確定の報道 の順に最新の段階が変わる", async () => {
+    const base = report.items[0] as Json;
+    const { city: _c, suspects: _s, ...r } = base;
+    const j1 = { ...judgment.items[0], external_id: "tl-j1", case_ref: "case-tl", instance: "一審", decided_on: "2026-03-01" };
+    const appeal = { ...r, external_id: "tl-r-appeal", case_ref: "case-tl", stage: "控訴", reported_at: "2026-03-10T12:00:00+09:00" };
+    const j2 = { ...judgment.items[0], external_id: "tl-j2", case_ref: "case-tl", instance: "控訴審", court: "大阪高裁", decided_on: "2026-08-01" };
+    const fin = { ...r, external_id: "tl-r-final", case_ref: "case-tl", stage: "確定", reported_at: "2026-08-20T12:00:00+09:00" };
+    const stage = async () => ((await (await view("/api/v1/cases/case-tl")).json()) as Json).case.latest_stage;
+    await signedIngest({ items: [j1] });
+    expect(await stage()).toBe("判決");
+    await signedIngest({ items: [appeal] });
+    expect(await stage()).toBe("控訴");
+    await signedIngest({ items: [j2] });
+    expect(await stage()).toBe("判決");
+    await signedIngest({ items: [fin] });
+    expect(await stage()).toBe("確定");
+    const detail = (await (await view("/api/v1/cases/case-tl")).json()) as Json;
+    expect(detail.judgments.map((j: Json) => j.instance)).toEqual(["一審", "控訴審"]);
+    expect(detail.judgments[1].court_level).toBe("高裁");
+  });
+
   it("報道の被疑者ごとの認否を保存する", async () => {
     const item = {
       ...report.items[0],

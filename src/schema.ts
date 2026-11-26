@@ -56,7 +56,8 @@ export const reportSchema = z
   .strictObject({
     type: z.literal("report"),
     ...common,
-    stage: z.enum(["発生", "逮捕", "再逮捕", "送検", "起訴"]),
+    // 控訴・上告・確定は「被告側が控訴した」「判決が確定した」などの報道（判決そのものは judgment で送る）
+    stage: z.enum(["発生", "逮捕", "再逮捕", "送検", "起訴", "控訴", "上告", "確定"]),
     reported_at: dateTime,
     occurred_on: date.optional(),
     prefecture: z.enum(PREFECTURES),
