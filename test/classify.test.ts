@@ -76,7 +76,7 @@ describe("法律の判定（試行の 5 分類）", () => {
   });
 
   it("辞書にない罪状は未分類（null）にする", () => {
-    expect(codes(["組織犯罪処罰法違反"])[0]?.[1]).toBeNull();
+    expect(codes(["官製談合防止法違反"])[0]?.[1]).toBeNull();
   });
 });
 
@@ -104,5 +104,18 @@ describe("法律名の中の「及び」", () => {
   });
   it("逮捕監禁（0005）", () => {
     expect(classifyCharges(["逮捕監禁"], aliases)[0]?.lawCode).toBe("confinement");
+  });
+});
+
+describe("総称の法律（0006）", () => {
+  it.each([
+    ["道路交通法違反", "road_traffic_other"],
+    ["道路交通法救護義務違反", "hit_and_run"],
+    ["道交法違反（酒気帯び運転）", "dui"],
+    ["組織犯罪処罰法違反", "organized_crime"],
+    ["組織犯罪処罰法違反（組織的詐欺）", "organized_fraud"],
+    ["組織犯罪処罰法違反（犯罪収益等隠匿）", "money_laundering"],
+  ])("%s → %s", (charge, law) => {
+    expect(classifyCharges([charge], aliases)[0]?.lawCode).toBe(law);
   });
 });

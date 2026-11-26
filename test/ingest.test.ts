@@ -197,9 +197,9 @@ describe("取り込み", () => {
   });
 
   it("未分類の罪状を結果で知らせる", async () => {
-    const item = { ...report.items[0], external_id: "unc-1", case_ref: "case-unc-1", charges: ["組織犯罪処罰法違反"] };
+    const item = { ...report.items[0], external_id: "unc-1", case_ref: "case-unc-1", charges: ["官製談合防止法違反"] };
     const res = (await (await signedIngest({ items: [item] })).json()) as Json;
-    expect(res.results[0].unclassified_charges).toEqual(["組織犯罪処罰法"]);
+    expect(res.results[0].unclassified_charges).toEqual(["官製談合防止法"]);
   });
 
   it("受信ログと原本を D1 に保存する", async () => {

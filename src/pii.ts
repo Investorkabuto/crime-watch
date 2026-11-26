@@ -44,6 +44,17 @@ const VICTIM_RELATION_RE = /(実の|義理の)?(娘|長女|次女|三女|孫娘|
 // 「10代の女性」のような年代は許容し、「16歳」「（16）」のような正確な年齢を検出する
 const EXACT_AGE_RE = /\d{1,3}歳|[(（]\d{1,3}[)）]/g;
 
+/** 年齢表記の直前・直後から、被告人・被疑者の年齢かどうかを判断する */
+function isOffenderAge(text: string, index: number, length: number): boolean {
+  const before = text.slice(Math.max(0, index - 6), index);
+  const after = text.slice(index + length, index + length + 6);
+  // 「被告（45）」「男（45）」「容疑者（45）」
+  if (/(被告人?|容疑者|受刑者|(?<!少)男|男性)$/.test(before)) return true;
+  // 「45歳の男」「45歳の被告」「45歳の会社員の男」
+  if (/^の(.{0,4}の)?(男|被告|容疑者)/.test(after)) return true;
+  return false;
+}
+
 export interface PiiOptions {
   isJuvenile: boolean;
   /** 性犯罪の罪状を含むか（被害者を特定できる情報をより厳しく検出する） */
@@ -59,8 +70,11 @@ export function detectPii(fields: Record<string, string | undefined | null>, opt
     for (const m of text.matchAll(PHONE_RE)) flags.push({ kind: "phone", field, match: m[0] });
     for (const m of text.matchAll(STREET_RE)) flags.push({ kind: "street_address", field, match: m[0] });
     if (isSexCrime) {
-      // 性犯罪では、被告人の年齢表記も被害者の年齢表記と区別できないため、正確な年齢はすべて検出する
-      for (const m of text.matchAll(EXACT_AGE_RE)) flags.push({ kind: "victim_age", field, match: m[0] });
+      // 性犯罪では被害者の正確な年齢を検出する。「被告（45）」「45歳の男」のように被告人・被疑者の年齢と分かるものは除く
+      for (const m of text.matchAll(EXACT_AGE_RE)) {
+        if (isOffenderAge(text, m.index ?? 0, m[0].length)) continue;
+        flags.push({ kind: "victim_age", field, match: m[0] });
+      }
       for (const m of text.matchAll(VICTIM_RELATION_RE)) flags.push({ kind: "victim_relation", field, match: m[0] });
     }
     if (isJuvenile || isSexCrime) {
