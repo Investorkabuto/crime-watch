@@ -71,6 +71,7 @@ a { color: var(--accent); }
   <nav id="tabs">
     <button data-tab="stats" class="on">集計</button>
     <button data-tab="cases">事件</button>
+    <button data-tab="prefs">都道府県</button>
     <button data-tab="flagged">要確認 <span class="badge" id="flagCount">–</span></button>
     <button data-tab="unclassified">未分類の罪状 <span class="badge" id="uncCount">–</span></button>
   </nav>
@@ -95,9 +96,34 @@ a { color: var(--accent); }
           <option value="hidden">非公開のみ</option>
         </select>
         <label><input type="checkbox" name="flagged" value="1"> 要確認のみ</label>
+        <input type="hidden" name="pref_basis" value="">
         <button class="btn primary" type="submit">検索</button>
       </form>
       <div id="caseList"></div>
+    </div>
+  </section>
+  <section id="tab-prefs" hidden>
+    <div class="panel">
+      <form id="prefFilter" class="row">
+        <label>基準
+          <select name="basis">
+            <option value="occurrence">発生地</option>
+            <option value="police">捜査した警察</option>
+            <option value="court">判決の裁判所</option>
+          </select>
+        </label>
+        <label>期間 <input type="date" name="from"> 〜 <input type="date" name="to"></label>
+        <select name="law"><option value="">すべての法律</option></select>
+        <select name="sort">
+          <option value="cases">件数の多い順</option>
+          <option value="code">都道府県コード順</option>
+        </select>
+        <label><input type="checkbox" name="hideZero" value="1" checked> 0件を隠す</label>
+        <button class="btn primary" type="submit">集計</button>
+        <button class="btn" type="button" id="prefCsv">CSV</button>
+      </form>
+      <p class="muted" style="margin:0 0 8px">件数は収集した報道・判決にもとづくもので、全国の認知件数ではありません（報道されやすい事件に偏ります）。人口あたりの補正はしていません。判決の指標は件数（n）が少ない都道府県ほどぶれが大きいので、n が 5 未満の値は薄く表示しています。行を押すと、その都道府県の事件一覧を開きます。</p>
+      <div id="prefTable"></div>
     </div>
   </section>
   <section id="tab-flagged" hidden></section>
@@ -145,9 +171,10 @@ a { color: var(--accent); }
     if (!token) { msg("閲覧用トークン（VIEWER_TOKEN）を入力してください。"); return; }
     try {
       laws = (await api("/api/v1/laws")).laws;
-      const ls = $("#caseFilter select[name=law]");
-      ls.innerHTML = '<option value="">すべての法律</option>' + laws.map((l) => '<option value="' + esc(l.code) + '">' + esc(l.name) + "</option>").join("");
-      $("#caseFilter select[name=prefecture]").innerHTML = '<option value="">すべての都道府県</option>' + PREFS.map((p) => "<option>" + p + "</option>").join("");
+      const lawOpts = '<option value="">すべての法律</option>' + laws.map((l) => '<option value="' + esc(l.code) + '">' + esc(l.name) + "</option>").join("");
+      $("#caseFilter select[name=law]").innerHTML = lawOpts;
+      $("#prefFilter select[name=law]").innerHTML = lawOpts;
+      $("#caseFilter select[name=prefecture]").innerHTML = '<option value="">すべての都道府県</option>' + PREFS.concat(["不明"]).map((p) => "<option>" + p + "</option>").join("");
       msg("");
       await load("stats");
       refreshBadges();
@@ -167,6 +194,7 @@ a { color: var(--accent); }
     try {
       if (tab === "stats") await renderStats();
       if (tab === "cases") await renderCases();
+      if (tab === "prefs") await renderPrefs();
       if (tab === "flagged") await renderFlagged();
       if (tab === "unclassified") await renderUnclassified();
     } catch (err) { msg(String(err.message || err), true); }
@@ -196,6 +224,8 @@ a { color: var(--accent); }
 
   // ===== 事件 =====
   $("#caseFilter").addEventListener("submit", (e) => { e.preventDefault(); renderCases(); });
+  // 都道府県を手で選び直したら、発生地の基準に戻す
+  $("#caseFilter select[name=prefecture]").addEventListener("change", () => { $("#caseFilter input[name=pref_basis]").value = ""; });
   async function renderCases() {
     const fd = new FormData($("#caseFilter"));
     const p = new URLSearchParams({ limit: "200" });
@@ -205,13 +235,16 @@ a { color: var(--accent); }
     const statusSel = $("#caseFilter select[name=status]").value;
     if (statusSel) p.set("status", statusSel);
     const r = await api("/api/v1/cases?" + p);
-    $("#caseList").innerHTML = r.cases.length === 0 ? '<p class="muted">該当する事件はありません。</p>' :
+    const basis = fd.get("pref_basis");
+    const note = fd.get("prefecture") && basis && basis !== "occurrence"
+      ? '<p class="muted">都道府県は「' + esc(BASIS_LABEL[basis]) + "」の基準で絞り込んでいます（一覧の都道府県の列は発生地です）。</p>" : "";
+    $("#caseList").innerHTML = note + (r.cases.length === 0 ? '<p class="muted">該当する事件はありません。</p>' :
       '<table><thead><tr><th>最新</th><th>段階</th><th>見出し</th><th class="hide-sm">都道府県</th><th></th></tr></thead><tbody>' +
       r.cases.map((c) => '<tr class="click" data-id="' + esc(c.id) + '"><td>' + esc((c.latest_at || "").slice(0, 10)) + "</td><td>" + esc(c.latest_stage) + "</td><td>" + esc(c.title) +
         '</td><td class="hide-sm">' + esc(c.prefecture) + (c.city ? " " + esc(c.city) : "") + "</td><td>" +
         (c.flagged ? '<span class="tag warn">要確認</span>' : "") + (c.status === "hidden" ? '<span class="tag danger">非公開</span>' : "") +
         (c.is_juvenile ? '<span class="tag">少年</span>' : "") + (c.backfill ? '<span class="tag">過去分</span>' : "") + "</td></tr>").join("") +
-      "</tbody></table>";
+      "</tbody></table>");
   }
   document.addEventListener("click", (e) => {
     const tr = e.target.closest("tr.click[data-id], a[data-case]");
@@ -292,6 +325,62 @@ a { color: var(--accent); }
       if (!$("#tab-flagged").hidden) renderFlagged();
     };
   }
+
+  // ===== 都道府県 =====
+  const BASIS_LABEL = { occurrence: "発生地", police: "捜査した警察", court: "判決の裁判所" };
+  let prefData = null;
+  $("#prefFilter").addEventListener("submit", (e) => { e.preventDefault(); renderPrefs(); });
+  $("#prefFilter").addEventListener("change", (e) => { if (e.target.name === "sort" || e.target.name === "hideZero") drawPrefs(); });
+  async function renderPrefs() {
+    const fd = new FormData($("#prefFilter"));
+    const p = new URLSearchParams();
+    for (const k of ["basis", "from", "to", "law"]) if (fd.get(k)) p.set(k, fd.get(k));
+    prefData = await api("/api/v1/admin/prefecture-stats?" + p);
+    drawPrefs();
+  }
+  function drawPrefs() {
+    if (!prefData) return;
+    const fd = new FormData($("#prefFilter"));
+    let rows = prefData.prefectures.slice();
+    if (fd.get("hideZero")) rows = rows.filter((r) => r.cases > 0);
+    if (fd.get("sort") === "cases") rows.sort((a, b) => b.cases - a.cases);
+    const max = Math.max(1, ...rows.map((r) => r.cases));
+    const faint = (n, html) => (n < 5 ? '<span class="muted">' + html + "</span>" : html);
+    const metric = (v, n, fmt) => (v == null ? '<span class="muted">–</span>' : faint(n, fmt(v) + ' <span class="muted">(n=' + n + ")</span>"));
+    $("#prefTable").innerHTML = '<p><b>' + esc(BASIS_LABEL[prefData.basis]) + "</b> の都道府県で集計。事件 " + prefData.total_cases + " 件。</p>" +
+      (rows.length === 0 ? '<p class="muted">該当する事件はありません。</p>' :
+      '<div style="overflow-x:auto"><table><thead><tr><th>都道府県</th><th class="num">事件</th><th style="width:18%"></th><th class="num hide-sm">うち少年</th>' +
+      '<th class="num">判決</th><th class="num hide-sm">執行猶予率</th><th class="num hide-sm">実刑の平均刑期</th><th class="num">求刑比の平均</th><th class="hide-sm">主な分類</th></tr></thead><tbody>' +
+      rows.map((r) => '<tr class="click-pref" data-pref="' + esc(r.prefecture) + '" style="cursor:pointer"><td>' + esc(r.prefecture) + '</td><td class="num">' + r.cases +
+        '</td><td><div class="bar"><i style="width:' + Math.round((r.cases / max) * 100) + '%"></i></div></td><td class="num hide-sm">' + (r.juvenile_cases || "") +
+        '</td><td class="num">' + (r.judgments || "") + '</td><td class="num hide-sm">' + metric(r.suspended_rate, r.custodial_judgments, pct) +
+        '</td><td class="num hide-sm">' + metric(r.avg_term_months_actual, r.custodial_judgments, (v) => months(Math.round(v))) +
+        '</td><td class="num">' + metric(r.avg_ratio_to_demand, r.n_ratio_to_demand, pct) +
+        '</td><td class="hide-sm">' + r.by_group.slice(0, 3).map((g) => '<span class="tag">' + esc(g.group_name) + " " + g.cases + "</span>").join("") + "</td></tr>").join("") +
+      "</tbody></table></div>");
+  }
+  document.addEventListener("click", (e) => {
+    const tr = e.target.closest("tr.click-pref"); if (!tr || !prefData) return;
+    const f = $("#caseFilter");
+    f.reset();
+    f.querySelector("select[name=prefecture]").value = tr.dataset.pref;
+    f.querySelector("input[name=pref_basis]").value = prefData.basis;
+    if (prefData.law) f.querySelector("select[name=law]").value = prefData.law;
+    f.querySelector("select[name=status]").value = "";
+    document.querySelector('#tabs button[data-tab=cases]').click();
+  });
+  $("#prefCsv").addEventListener("click", async () => {
+    if (!prefData) await renderPrefs();
+    const head = ["都道府県", "事件", "うち少年", "判決", "実刑・執行猶予の判決", "執行猶予率", "実刑の平均刑期（月）", "求刑比の平均", "求刑比のn", "法定刑内の位置の平均", "法定刑内の位置のn", "男性", "女性", "分類別"];
+    const cell = (v) => { const s = v == null ? "" : String(v); return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const lines = [head.join(",")].concat(prefData.prefectures.map((r) => [r.prefecture, r.cases, r.juvenile_cases, r.judgments, r.custodial_judgments, r.suspended_rate, r.avg_term_months_actual, r.avg_ratio_to_demand, r.n_ratio_to_demand, r.avg_position_in_range, r.n_position_in_range, r.male, r.female, r.by_group.map((g) => g.group_name + ":" + g.cases).join(" ")].map(cell).join(",")));
+    const blob = new Blob(["\\ufeff" + lines.join("\\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "crime-watch-prefectures-" + prefData.basis + ".csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
 
   // ===== 要確認 =====
   async function renderFlagged() {

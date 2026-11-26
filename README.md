@@ -22,6 +22,7 @@
 | GET | `/api/v1/judgments` | 閲覧 | 判決一覧（`law`, `judge`, `court`） |
 | GET | `/api/v1/admin/trial-stats` | 閲覧 | 試行の集計（項目の充足率、未分類率、件数など） |
 | POST | `/api/v1/admin/reclassify` | 閲覧 | 罪状辞書の更新後に罪状を判定し直す |
+| GET | `/api/v1/admin/prefecture-stats` | 閲覧 | 都道府県別の集計（`basis=occurrence\|police\|court`、`from`、`to`、`law`） |
 | GET | `/api/v1/admin/flagged` | 閲覧 | 自動チェックに引っかかった報道・判決 |
 | POST | `/api/v1/admin/cases/:id/status` | 閲覧 | 事件の公開・非公開の切り替え（`{"status":"hidden"}`） |
 | POST | `/api/v1/admin/aliases` | 閲覧 | 罪状辞書に追加（`{"alias","law_code"}`）し、判定し直す |

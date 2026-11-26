@@ -9,6 +9,7 @@ import { checkDatabase } from "./dbcheck";
 import { rescanFlags } from "./rescan";
 import { addAlias, listFlagged, reclassifyAll, setCaseStatus } from "./admin";
 import { ADMIN_PAGE } from "./admin-page";
+import { PREF_EXPR, prefectureStats, type PrefBasis } from "./prefstats";
 
 // D1 の 1 行あたりの上限（約 2MB）に収まるよう、原本の保存を考えて 1MB までにする
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -140,8 +141,13 @@ app.get("/api/v1/cases", async (c) => {
     binds.push(q.law, q.law);
   }
   if (q.prefecture) {
-    where.push("c.prefecture = ?");
-    binds.push(q.prefecture);
+    // pref_basis=police|court で、都道府県別の集計と同じ基準で絞り込む（既定は発生地）
+    const basis = (q.pref_basis && q.pref_basis in PREF_EXPR ? q.pref_basis : "occurrence") as PrefBasis;
+    if (q.prefecture === "不明") where.push(`${PREF_EXPR[basis]} IS NULL`);
+    else {
+      where.push(`${PREF_EXPR[basis]} = ?`);
+      binds.push(q.prefecture);
+    }
   }
   if (q.from) {
     where.push("c.latest_at >= ?");
@@ -284,6 +290,12 @@ app.post("/api/v1/admin/rescan-flags", async (c) => c.json(await rescanFlags(c.e
 
 /** 罪状辞書を更新した後に、保存済みの罪状を判定し直す（判決の量刑指標も計算し直す） */
 app.post("/api/v1/admin/reclassify", async (c) => c.json(await reclassifyAll(c.env.DB)));
+
+/** 都道府県別の集計（basis=occurrence|police|court、from、to、law） */
+app.get("/api/v1/admin/prefecture-stats", async (c) => {
+  const q = c.req.query();
+  return c.json(await prefectureStats(c.env.DB, { basis: q.basis as PrefBasis, from: q.from, to: q.to, law: q.law }));
+});
 
 app.get("/api/v1/admin/flagged", async (c) => c.json({ items: await listFlagged(c.env.DB) }));
 
