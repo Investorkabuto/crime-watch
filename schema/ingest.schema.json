@@ -151,6 +151,9 @@
             "adult",
             "unknown"
           ]
+        },
+        "occupation": {
+          "$ref": "#/$defs/occupation"
         }
       }
     },
@@ -259,6 +262,31 @@
           "items": {
             "$ref": "#/$defs/reportSuspect"
           }
+        },
+        "police_agency": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "捜査した警察（例: 大阪府警、警視庁）。記事の表記のままでよい"
+        },
+        "police_station": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "警察署（例: 天満署）。少年事件では送らない"
+        },
+        "prosecutor_office": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "起訴・送検先の検察庁（例: 大阪地検）"
+        },
+        "victims": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/victim"
+          }
+        },
+        "circumstances": {
+          "$ref": "#/$defs/circumstances"
         }
       },
       "if": {
@@ -270,8 +298,17 @@
       },
       "then": {
         "not": {
-          "required": [
-            "city"
+          "anyOf": [
+            {
+              "required": [
+                "city"
+              ]
+            },
+            {
+              "required": [
+                "police_station"
+              ]
+            }
           ]
         },
         "properties": {
@@ -386,7 +423,8 @@
           "description": "犯行日（分かれば）。行為時点の法定刑の判定に使う"
         },
         "prefecture": {
-          "$ref": "#/$defs/prefecture"
+          "$ref": "#/$defs/prefecture",
+          "description": "発生した都道府県（裁判所の所在地ではない）"
         },
         "judges": {
           "type": "array",
@@ -592,6 +630,31 @@
             "確定",
             "不明"
           ]
+        },
+        "city": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "発生した市区町村。少年事件では送らない"
+        },
+        "police_agency": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "捜査した警察（例: 大阪府警、警視庁）。記事の表記のままでよい"
+        },
+        "prosecutor_office": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "起訴・送検先の検察庁（例: 大阪地検）"
+        },
+        "victims": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/victim"
+          }
+        },
+        "circumstances": {
+          "$ref": "#/$defs/circumstances"
         }
       },
       "if": {
@@ -610,6 +673,11 @@
               ]
             }
           }
+        },
+        "not": {
+          "required": [
+            "city"
+          ]
         }
       }
     },
@@ -656,6 +724,109 @@
             "unknown"
           ],
           "description": "容疑を認めているか（報道時点）"
+        },
+        "occupation": {
+          "$ref": "#/$defs/occupation"
+        }
+      }
+    },
+    "occupation": {
+      "enum": [
+        "会社員",
+        "会社役員",
+        "公務員",
+        "自営業",
+        "アルバイト・パート",
+        "無職",
+        "学生",
+        "その他",
+        "不明"
+      ],
+      "description": "職業の区分（報道される範囲の粗い分類）"
+    },
+    "victim": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "被害者の粗い属性。氏名・正確な年齢は入れない",
+      "properties": {
+        "gender": {
+          "enum": [
+            "male",
+            "female",
+            "unknown"
+          ]
+        },
+        "age_group": {
+          "type": "string",
+          "pattern": "^(10歳未満|[1-9]0代|100歳以上)$"
+        },
+        "occupation": {
+          "$ref": "#/$defs/occupation"
+        },
+        "relation": {
+          "enum": [
+            "面識なし",
+            "知人",
+            "交際相手・元交際相手",
+            "配偶者・元配偶者",
+            "親族",
+            "職場関係",
+            "客・取引先",
+            "その他",
+            "不明"
+          ],
+          "description": "被疑者・被告人との関係"
+        }
+      }
+    },
+    "circumstances": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "事件の状況（記事に書かれる範囲）",
+      "properties": {
+        "motive": {
+          "enum": [
+            "金銭",
+            "怨恨",
+            "男女関係",
+            "性的欲求",
+            "生活困窮",
+            "遊興費",
+            "その他",
+            "不明"
+          ]
+        },
+        "weapon": {
+          "enum": [
+            "なし",
+            "刃物",
+            "銃器",
+            "鈍器",
+            "車両",
+            "その他",
+            "不明"
+          ]
+        },
+        "accomplice_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "共犯者の人数（0 = 単独）"
+        },
+        "location_type": {
+          "enum": [
+            "住宅",
+            "路上",
+            "店舗",
+            "駅・交通機関",
+            "職場",
+            "学校",
+            "公園",
+            "車内",
+            "インターネット",
+            "その他",
+            "不明"
+          ]
         }
       }
     }

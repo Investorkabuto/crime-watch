@@ -2,12 +2,13 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { checkBearer, verifySignature } from "./auth";
 import type { Env } from "./env";
 import { ingestItem, loadDictionary, type ItemResult } from "./ingest";
-import { classifyCharges } from "./classify";
 import { MAX_ITEMS } from "./schema";
 import { nowIso } from "./normalize";
 import { trialStats } from "./stats";
 import { checkDatabase } from "./dbcheck";
 import { rescanFlags } from "./rescan";
+import { addAlias, listFlagged, reclassifyAll, setCaseStatus } from "./admin";
+import { ADMIN_PAGE } from "./admin-page";
 
 // D1 の 1 行あたりの上限（約 2MB）に収まるよう、原本の保存を考えて 1MB までにする
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -15,6 +16,15 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const app = new Hono<{ Bindings: Env }>();
 
 /** 死活確認。データベースのテーブルと初期データがそろっているかも返す */
+/** 管理画面。ページ自体にはデータを含まず、閲覧 API をトークン付きで呼ぶ */
+app.get("/admin", (c) => {
+  c.header("Cache-Control", "no-store");
+  c.header("X-Robots-Tag", "noindex, nofollow");
+  c.header("X-Frame-Options", "DENY");
+  c.header("Referrer-Policy", "no-referrer");
+  return c.html(ADMIN_PAGE);
+});
+
 app.get("/api/v1/health", async (c) => {
   const s = await checkDatabase(c.env.DB);
   if (s.ready) return c.json({ ok: true, database: "ready", laws: s.laws, aliases: s.aliases });
@@ -112,8 +122,16 @@ app.get("/api/v1/laws", async (c) => {
 
 app.get("/api/v1/cases", async (c) => {
   const q = c.req.query();
-  const where: string[] = ["c.status = 'published'"];
+  const where: string[] = [];
   const binds: unknown[] = [];
+  // 管理画面用: status=all で非公開も含める、status=hidden で非公開のみ
+  if (q.status === "hidden") where.push("c.status = 'hidden'");
+  else if (q.status !== "all") where.push("c.status = 'published'");
+  if (q.flagged === "1") where.push("c.flagged = 1");
+  if (q.q) {
+    where.push("(c.title LIKE ? OR c.summary LIKE ? OR c.case_ref = ?)");
+    binds.push(`%${q.q}%`, `%${q.q}%`, q.q);
+  }
   if (q.law) {
     where.push(
       `(EXISTS (SELECT 1 FROM reports r JOIN report_charges rc ON rc.report_id = r.id WHERE r.case_id = c.id AND rc.law_code = ?)
@@ -140,7 +158,8 @@ app.get("/api/v1/cases", async (c) => {
     `SELECT c.id, c.case_ref, c.title, c.summary, c.occurred_on, c.prefecture,
             CASE WHEN c.is_juvenile = 1 THEN NULL ELSE c.city END AS city,
             c.is_juvenile, c.latest_stage, c.latest_at, c.backfill, c.flagged
-     FROM cases c WHERE ${where.join(" AND ")} ORDER BY c.latest_at DESC LIMIT ? OFFSET ?`,
+            , c.status
+     FROM cases c ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY c.latest_at DESC LIMIT ? OFFSET ?`,
   )
     .bind(...binds, limit, offset)
     .all();
@@ -158,10 +177,13 @@ app.get("/api/v1/cases/:id", async (c) => {
     .bind(id, id)
     .first<{ id: string; is_juvenile: number }>();
   if (!kase) return c.json({ error: "not_found" }, 404);
-  const [reports, rcharges, persons, judgments, jcharges, judges] = await db.batch([
+  const [reports, rcharges, persons, judgments, jcharges, judges, victims] = await db.batch([
     db.prepare(
       `SELECT id, external_id, stage, title, summary, reported_at, occurred_on, prefecture,
-              CASE WHEN ?2 = 1 THEN NULL ELSE city END AS city, link_confidence, backfill, source_url, source_name,
+              CASE WHEN ?2 = 1 THEN NULL ELSE city END AS city, police_agency, police_prefecture,
+              CASE WHEN ?2 = 1 THEN NULL ELSE police_station END AS police_station, prosecutor_office,
+              motive, weapon, accomplice_count, location_type,
+              link_confidence, backfill, source_url, source_name,
               additional_sources, flags FROM reports WHERE case_id = ?1 ORDER BY reported_at`,
     ).bind(kase.id, kase.is_juvenile),
     db.prepare(
@@ -169,7 +191,7 @@ app.get("/api/v1/cases/:id", async (c) => {
        JOIN reports r ON r.id = rc.report_id LEFT JOIN laws l ON l.code = rc.law_code WHERE r.case_id = ? ORDER BY rc.seq`,
     ).bind(kase.id),
     db.prepare(
-      `SELECT p.report_id, p.gender, CASE WHEN ?2 = 1 THEN NULL ELSE p.age END AS age, p.age_group, p.juvenile_class
+      `SELECT p.report_id, p.gender, CASE WHEN ?2 = 1 THEN NULL ELSE p.age END AS age, p.age_group, p.juvenile_class, p.plea, p.occupation
        FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = ?1 ORDER BY p.seq`,
     ).bind(kase.id, kase.is_juvenile),
     db.prepare(
@@ -185,7 +207,16 @@ app.get("/api/v1/cases/:id", async (c) => {
       `SELECT jj.judgment_id, jj.role, g.id AS judge_id, g.name FROM judgment_judges jj JOIN judges g ON g.id = jj.judge_id
        JOIN judgments j ON j.id = jj.judgment_id WHERE j.case_id = ?`,
     ).bind(kase.id),
+    db.prepare(
+      `SELECT v.parent_type, v.parent_id, v.gender, v.age_group, v.occupation, v.relation FROM victims v
+       WHERE (v.parent_type = 'report' AND v.parent_id IN (SELECT id FROM reports WHERE case_id = ?1))
+          OR (v.parent_type = 'judgment' AND v.parent_id IN (SELECT id FROM judgments WHERE case_id = ?1))
+       ORDER BY v.seq`,
+    ).bind(kase.id),
   ]);
+  const vs = (victims?.results ?? []) as Record<string, unknown>[];
+  const victimsOf = (type: string, id: unknown) =>
+    vs.filter((v) => v.parent_type === type && v.parent_id === id).map(({ parent_type: _t, parent_id: _p, ...v }) => v);
   const by = <T extends Record<string, unknown>>(rows: T[], key: string, id: unknown) => rows.filter((r) => r[key] === id);
   const rc = (rcharges?.results ?? []) as Record<string, unknown>[];
   const ps = (persons?.results ?? []) as Record<string, unknown>[];
@@ -197,11 +228,20 @@ app.get("/api/v1/cases/:id", async (c) => {
       ...r,
       charges: by(rc, "report_id", r.id),
       suspects: by(ps, "report_id", r.id),
+      victims: victimsOf("report", r.id),
     })),
     judgments: ((judgments?.results ?? []) as Record<string, unknown>[]).map((j) => {
       const { person_ref: _omit, ...rest } = j; // 人物 ID は内部用なので出さない
-      if (kase.is_juvenile) rest.defendant_age = null;
-      return { ...rest, charges: by(jc, "judgment_id", j.id), judges: by(jg, "judgment_id", j.id) };
+      if (kase.is_juvenile) {
+        rest.defendant_age = null;
+        rest.city = null;
+      }
+      return {
+        ...rest,
+        charges: by(jc, "judgment_id", j.id),
+        judges: by(jg, "judgment_id", j.id),
+        victims: victimsOf("judgment", j.id),
+      };
     }),
   });
 });
@@ -242,34 +282,25 @@ app.get("/api/v1/admin/trial-stats", async (c) => c.json(await trialStats(c.env.
 /** 自動チェックのルールを直した後に、保存済みの報道・判決の flags を付け直す */
 app.post("/api/v1/admin/rescan-flags", async (c) => c.json(await rescanFlags(c.env.DB)));
 
-/** 罪状辞書を更新した後に、保存済みの罪状を判定し直す */
-app.post("/api/v1/admin/reclassify", async (c) => {
-  const db = c.env.DB;
-  const dict = await loadDictionary(db);
-  let changed = 0;
-  for (const table of ["report_charges", "judgment_charges"] as const) {
-    const parent = table === "report_charges" ? "report_id" : "judgment_id";
-    const { results } = await db.prepare(`SELECT ${parent} AS pid, seq, charge_text FROM ${table}`).all<{
-      pid: string;
-      seq: number;
-      charge_text: string;
-    }>();
-    const stmts: D1PreparedStatement[] = [];
-    for (const r of results) {
-      const [hit] = classifyCharges([r.charge_text], dict.aliases);
-      stmts.push(
-        db
-          .prepare(`UPDATE ${table} SET law_code = ?, matched_alias = ? WHERE ${parent} = ? AND seq = ? AND law_code IS NOT ?`)
-          .bind(hit?.lawCode ?? null, hit?.matchedAlias ?? null, r.pid, r.seq, hit?.lawCode ?? null),
-      );
-    }
-    for (let i = 0; i < stmts.length; i += 100) {
-      const res = await db.batch(stmts.slice(i, i + 100));
-      changed += res.reduce((n, x) => n + (x.meta.changes ?? 0), 0);
-    }
-  }
-  // 注意: 量刑指標の基準（最も重い罪）と指標の値は、判決を再送してもらうと計算し直される
-  return c.json({ changed });
+/** 罪状辞書を更新した後に、保存済みの罪状を判定し直す（判決の量刑指標も計算し直す） */
+app.post("/api/v1/admin/reclassify", async (c) => c.json(await reclassifyAll(c.env.DB)));
+
+app.get("/api/v1/admin/flagged", async (c) => c.json({ items: await listFlagged(c.env.DB) }));
+
+app.post("/api/v1/admin/cases/:id/status", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { status?: string };
+  if (body.status !== "published" && body.status !== "hidden") return c.json({ error: "invalid_status" }, 400);
+  const ok = await setCaseStatus(c.env.DB, c.req.param("id"), body.status);
+  return ok ? c.json({ ok: true, status: body.status }) : c.json({ error: "not_found" }, 404);
+});
+
+/** 罪状辞書に言い方を追加し、保存済みの罪状を判定し直す */
+app.post("/api/v1/admin/aliases", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { alias?: string; law_code?: string };
+  if (!body.alias || !body.law_code) return c.json({ error: "alias_and_law_code_required" }, 400);
+  const r = await addAlias(c.env.DB, body.alias, body.law_code);
+  if (r !== "added") return c.json({ error: r }, 400);
+  return c.json({ ok: true, ...(await reclassifyAll(c.env.DB)) });
 });
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));

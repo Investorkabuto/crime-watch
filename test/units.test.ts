@@ -102,3 +102,23 @@ describe("自動チェック（性犯罪）", () => {
     expect(detectPii({ summary: "娘を連れて逃走" }, { isJuvenile: false, isSexCrime: false })).toEqual([]);
   });
 });
+
+import { normalizePoliceAgency, normalizePoliceStation, normalizeProsecutorOffice } from "../src/agencies";
+
+describe("捜査機関・検察庁の正規化", () => {
+  it.each([
+    ["大阪府警", "大阪府警察", "大阪府"],
+    ["京都府警察本部", "京都府警察", "京都府"],
+    ["神奈川県警", "神奈川県警察", "神奈川県"],
+    ["警視庁", "警視庁", "東京都"],
+    ["道警", "北海道警察", "北海道"],
+    ["近畿厚生局麻薬取締部", "近畿厚生局麻薬取締部", null],
+  ])("%s → %s（%s）", (raw, name, pref) => {
+    expect(normalizePoliceAgency(raw)).toEqual({ name, prefecture: pref });
+  });
+  it("検察庁と警察署", () => {
+    expect(normalizeProsecutorOffice("東京地検特捜部")).toBe("東京地方検察庁特捜部");
+    expect(normalizeProsecutorOffice("大阪高検")).toBe("大阪高等検察庁");
+    expect(normalizePoliceStation("天満警察署")).toBe("天満署");
+  });
+});
