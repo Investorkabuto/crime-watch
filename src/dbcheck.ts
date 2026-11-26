@@ -6,6 +6,7 @@ export const REQUIRED_COLUMNS: { table: string; column: string; migration: strin
   { table: "reports", column: "police_agency", migration: "0005_more_details.sql" },
   { table: "judgments", column: "prefecture", migration: "0005_more_details.sql" },
   { table: "flag_reviews", column: "reviewed_flags", migration: "0007_flag_reviews.sql" },
+  { table: "report_persons", column: "nationality", migration: "0008_nationality.sql" },
 ];
 
 export type DbStatus =

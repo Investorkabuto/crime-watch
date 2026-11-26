@@ -35,7 +35,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 16px; }
 .stat .k { color: var(--muted); font-size: 12px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { color: var(--muted); font-weight: 500; font-size: 12px; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr.click { cursor: pointer; } tr.click:hover { background: var(--accent-weak); }
 .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; min-width: 80px; }
@@ -72,6 +72,7 @@ a { color: var(--accent); }
     <button data-tab="stats" class="on">集計</button>
     <button data-tab="cases">事件</button>
     <button data-tab="prefs">都道府県</button>
+    <button data-tab="nats">国籍</button>
     <button data-tab="flagged">要確認 <span class="badge" id="flagCount">–</span></button>
     <button data-tab="unclassified">未分類の罪状 <span class="badge" id="uncCount">–</span></button>
   </nav>
@@ -126,6 +127,19 @@ a { color: var(--accent); }
       <div id="prefTable"></div>
     </div>
   </section>
+  <section id="tab-nats" hidden>
+    <div class="panel">
+      <form id="natFilter" class="row">
+        <label>期間 <input type="date" name="from"> 〜 <input type="date" name="to"></label>
+        <select name="law"><option value="">すべての法律</option></select>
+        <select name="prefecture"><option value="">すべての都道府県（発生地）</option></select>
+        <button class="btn primary" type="submit">集計</button>
+        <button class="btn" type="button" id="natCsv">CSV</button>
+      </form>
+      <p class="muted" style="margin:0 0 8px">数える単位は人（同じ事件の同じ人物は 1 人）です。国籍は記事に明記されたものだけを数え、書かれていない人は「記載なし」にしています（日本国籍とはみなしません）。報道は外国籍のときに国籍を書くことが多いため、外国籍の割合は実際より高く見えます。人口あたりの補正はしていません。来日外国人・定着居住者の区分は警察庁の統計に合わせています。</p>
+      <div id="natTable"></div>
+    </div>
+  </section>
   <section id="tab-flagged" hidden></section>
   <section id="tab-unclassified" hidden></section>
 </main>
@@ -174,6 +188,8 @@ a { color: var(--accent); }
       const lawOpts = '<option value="">すべての法律</option>' + laws.map((l) => '<option value="' + esc(l.code) + '">' + esc(l.name) + "</option>").join("");
       $("#caseFilter select[name=law]").innerHTML = lawOpts;
       $("#prefFilter select[name=law]").innerHTML = lawOpts;
+      $("#natFilter select[name=law]").innerHTML = lawOpts;
+      $("#natFilter select[name=prefecture]").innerHTML = '<option value="">すべての都道府県（発生地）</option>' + PREFS.map((p) => "<option>" + p + "</option>").join("");
       $("#caseFilter select[name=prefecture]").innerHTML = '<option value="">すべての都道府県</option>' + PREFS.concat(["不明"]).map((p) => "<option>" + p + "</option>").join("");
       msg("");
       await load("stats");
@@ -195,6 +211,7 @@ a { color: var(--accent); }
       if (tab === "stats") await renderStats();
       if (tab === "cases") await renderCases();
       if (tab === "prefs") await renderPrefs();
+      if (tab === "nats") await renderNats();
       if (tab === "flagged") await renderFlagged();
       if (tab === "unclassified") await renderUnclassified();
     } catch (err) { msg(String(err.message || err), true); }
@@ -293,7 +310,8 @@ a { color: var(--accent); }
     const evHtml = events.map((e) => {
       if (e.kind === "report") {
         const r = e.r, flags = parse(r.flags);
-        const sus = (r.suspects || []).map((p) => [GENDER[p.gender] || "", p.age != null ? p.age + "歳" : p.age_group || "", p.occupation || "", p.plea ? { admit: "認めている", deny: "否認", partial: "一部否認", unknown: "" }[p.plea] : ""].filter(Boolean).join("・")).filter(Boolean).join(" / ");
+        const sus = (r.suspects || []).map((p) => [GENDER[p.gender] || "", p.age != null ? p.age + "歳" : p.age_group || "", p.occupation || "",
+          p.nationality ? p.nationality + "国籍" + (p.residence_status ? "（" + p.residence_status + "）" : "") : (p.residence_status || ""), p.plea ? { admit: "認めている", deny: "否認", partial: "一部否認", unknown: "" }[p.plea] : ""].filter(Boolean).join("・")).filter(Boolean).join(" / ");
         return '<div class="ev"><div class="when">' + esc(r.reported_at.slice(0, 16).replace("T", " ")) + " 報道（" + esc(r.stage) + ")" + (r.link_confidence === "low" ? ' <span class="tag warn">ひも付けの確度：低</span>' : "") + "</div>" +
           "<div><b>" + highlight(r.title, flags) + "</b></div><div>" + highlight(r.summary, flags) + "</div>" + flagTags(flags) +
           '<dl class="kv">' +
@@ -308,7 +326,8 @@ a { color: var(--accent); }
       const sentence = esc(j.sentence_type) + (j.term_months != null ? " " + months(j.term_months) : "") + (j.suspended_months ? "・執行猶予" + months(j.suspended_months) + (j.probation ? "（保護観察付き）" : "") : "") + (j.fine_yen ? "・罰金" + Number(j.fine_yen).toLocaleString() + "円" : "");
       const demand = j.demand_type ? esc(j.demand_type) + (j.demand_months != null ? " " + months(j.demand_months) : "") : "";
       const judges = (j.judges || []).map((g) => esc(g.name) + "（" + esc(g.role) + "）").join("、");
-      const def = [GENDER[j.defendant_gender] ? GENDER[j.defendant_gender] + (j.gender_inherited ? "（逮捕報道から）" : "") : "", j.defendant_age != null ? j.defendant_age + "歳" : j.defendant_age_group || "", j.defendant_occupation || ""].filter(Boolean).join("・");
+      const def = [GENDER[j.defendant_gender] ? GENDER[j.defendant_gender] + (j.gender_inherited ? "（逮捕報道から）" : "") : "", j.defendant_age != null ? j.defendant_age + "歳" : j.defendant_age_group || "", j.defendant_occupation || "",
+        j.defendant_nationality ? j.defendant_nationality + "国籍" + (j.defendant_residence_status ? "（" + j.defendant_residence_status + "）" : "") + (j.nationality_inherited ? "（逮捕報道から）" : "") : ""].filter(Boolean).join("・");
       return '<div class="ev judgment"><div class="when">' + esc(j.decided_on) + " 判決" + (j.instance ? "（" + esc(j.instance) + "）" : "") + " " + esc(j.court_name) + (j.lay_judge_trial ? ' <span class="tag">裁判員裁判</span>' : "") + "</div>" +
         "<div><b>" + highlight(j.title, flags) + "</b></div><div>" + highlight(j.summary, flags) + "</div>" + flagTags(flags) +
         '<dl class="kv">' +
@@ -393,6 +412,51 @@ a { color: var(--accent); }
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "crime-watch-prefectures-" + prefData.basis + ".csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  // ===== 国籍 =====
+  let natData = null;
+  $("#natFilter").addEventListener("submit", (e) => { e.preventDefault(); renderNats(); });
+  async function renderNats() {
+    const fd = new FormData($("#natFilter"));
+    const p = new URLSearchParams();
+    for (const k of ["from", "to", "law", "prefecture"]) if (fd.get(k)) p.set(k, fd.get(k));
+    natData = await api("/api/v1/admin/nationality-stats?" + p);
+    const d = natData;
+    const max = Math.max(1, ...d.nationalities.map((r) => r.people));
+    const faint = (n, html) => (n < 5 ? '<span class="muted">' + html + "</span>" : html);
+    const metric = (v, n) => (v == null ? '<span class="muted">–</span>' : faint(n, pct(v) + ' <span class="muted">(n=' + n + ")</span>"));
+    $("#natTable").innerHTML =
+      '<div class="grid" style="margin-bottom:12px">' +
+      [["人数（全体）", d.total_people], ["国籍の記載あり", d.stated_people], ["うち外国籍", d.foreign_people]]
+        .map(([k, v]) => '<div class="stat"><div class="v">' + esc(v) + '</div><div class="k">' + k + "</div></div>").join("") + "</div>" +
+      (d.nationalities.length === 0 ? '<p class="muted">該当するデータはありません。</p>' :
+      '<div style="overflow-x:auto"><table><thead><tr><th>国籍</th><th class="num">人数</th><th style="width:14%"></th><th class="num">事件</th>' +
+      '<th class="num hide-sm">来日外国人</th><th class="num hide-sm">定着居住者</th><th class="hide-sm">在留資格</th><th class="hide-sm">主な分類</th><th class="hide-sm">主な都道府県</th>' +
+      '<th class="num">判決</th><th class="num hide-sm">執行猶予率</th><th class="num hide-sm">求刑比の平均</th></tr></thead><tbody>' +
+      d.nationalities.map((r) => "<tr" + (r.stated ? "" : ' class="muted"') + "><td>" + esc(r.nationality) + (r.code ? ' <span class="muted">' + esc(r.code) + "</span>" : "") +
+        '</td><td class="num">' + r.people + '</td><td><div class="bar"><i style="width:' + Math.round((r.people / max) * 100) + '%"></i></div></td><td class="num">' + r.cases +
+        '</td><td class="num hide-sm">' + (r.stated && r.code !== "JP" ? r.residence.来日外国人 || "" : "") + '</td><td class="num hide-sm">' + (r.stated && r.code !== "JP" ? r.residence.定着居住者 || "" : "") +
+        '</td><td class="hide-sm">' + r.residence.内訳.slice(0, 3).map((x) => '<span class="tag">' + esc(x.status) + " " + x.people + "</span>").join("") +
+        '</td><td class="hide-sm">' + r.by_group.slice(0, 3).map((g) => '<span class="tag">' + esc(g.group_name) + " " + g.cases + "</span>").join("") +
+        '</td><td class="hide-sm">' + r.top_prefectures.slice(0, 3).map((x) => esc(x.prefecture) + " " + x.people).join("、") +
+        '</td><td class="num">' + (r.judgments || "") + '</td><td class="num hide-sm">' + metric(r.suspended_rate, r.custodial_judgments) +
+        '</td><td class="num hide-sm">' + metric(r.avg_ratio_to_demand, r.n_ratio_to_demand) + "</td></tr>").join("") +
+      "</tbody></table></div>");
+  }
+  $("#natCsv").addEventListener("click", async () => {
+    if (!natData) await renderNats();
+    const head = ["国籍", "コード", "人数", "事件", "来日外国人", "定着居住者", "在留資格不明", "在留資格の内訳", "分類別", "主な都道府県", "判決", "執行猶予率", "求刑比の平均", "求刑比のn"];
+    const cell = (v) => { const s = v == null ? "" : String(v); return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const lines = [head.join(",")].concat(natData.nationalities.map((r) => [r.nationality, r.code, r.people, r.cases, r.residence.来日外国人, r.residence.定着居住者, r.residence.不明,
+      r.residence.内訳.map((x) => x.status + ":" + x.people).join(" "), r.by_group.map((g) => g.group_name + ":" + g.cases).join(" "),
+      r.top_prefectures.map((x) => x.prefecture + ":" + x.people).join(" "), r.judgments, r.suspended_rate, r.avg_ratio_to_demand, r.n_ratio_to_demand].map(cell).join(",")));
+    const blob = new Blob(["\\ufeff" + lines.join("\\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "crime-watch-nationalities.csv";
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });

@@ -411,6 +411,41 @@ describe("要確認の確認済み", () => {
   });
 });
 
+describe("国籍", () => {
+  it("報道の国籍・在留資格を保存し、判決に引き継ぎ、国籍別に人数で集計する（記載なしは日本国籍とみなさない）", async () => {
+    const r = {
+      ...report.items[0],
+      external_id: "nat-r",
+      case_ref: "case-nat",
+      occurred_on: "2026-07-07",
+      suspects: [
+        { person_ref: "n1", gender: "male", age: 26, nationality: "ベトナム国籍", residence_status: "技能実習" },
+        { person_ref: "n2", gender: "male", age: 31 },
+      ],
+    };
+    const j1 = { ...judgment.items[0], external_id: "nat-j1", case_ref: "case-nat", defendant: { person_ref: "n1", gender: "unknown" } };
+    const j2 = { ...judgment.items[0], external_id: "nat-j2", case_ref: "case-nat", defendant: { person_ref: "n2", gender: "unknown" } };
+    const res = (await (await signedIngest({ items: [r, j1, j2] })).json()) as Json;
+    expect(res.rejected).toBe(0);
+    const d = (await (await view("/api/v1/cases/case-nat")).json()) as Json;
+    expect(d.reports[0].suspects[0]).toMatchObject({ nationality: "ベトナム", nationality_code: "VN", residence_status: "技能実習" });
+    const jd = d.judgments.find((x: Json) => x.external_id === "nat-j1");
+    expect(jd).toMatchObject({ defendant_nationality: "ベトナム", defendant_residence_status: "技能実習", nationality_inherited: 1 });
+    expect(d.judgments.find((x: Json) => x.external_id === "nat-j2").defendant_nationality).toBeNull();
+
+    const st = (await (await view("/api/v1/admin/nationality-stats?from=2026-07-07&to=2026-07-07")).json()) as Json;
+    expect(st.total_people).toBe(2);
+    expect(st.stated_people).toBe(1);
+    expect(st.foreign_people).toBe(1);
+    const vn = st.nationalities.find((x: Json) => x.nationality === "ベトナム");
+    expect(vn).toMatchObject({ code: "VN", people: 1, cases: 1, judgments: 1 });
+    expect(vn.residence.来日外国人).toBe(1);
+    expect(st.nationalities.find((x: Json) => x.nationality === "記載なし").people).toBe(1);
+    // 記載なしは最後に並ぶ
+    expect(st.nationalities[st.nationalities.length - 1].nationality).toBe("記載なし");
+  });
+});
+
 describe("都道府県別の集計", () => {
   it("発生地・警察・裁判所の基準で数え、判決の指標を出す", async () => {
     // 発生は奈良県、捜査は大阪府警、判決は大阪地裁

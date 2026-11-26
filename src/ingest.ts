@@ -1,6 +1,7 @@
 // 受信データの取り込み（要件 F1〜F5, F10）
 import { normalizePoliceAgency, normalizePoliceStation, normalizeProsecutorOffice } from "./agencies";
 import { classifyCharges, type AliasMap, type ClassifiedCharge } from "./classify";
+import { normalizeNationality } from "./nationality";
 import { courtLevel, courtPrefecture, normalizeCourtName } from "./courts";
 import { periodAt, positionInRange, ratioToDemand, severity, type PenaltyPeriod } from "./metrics";
 import { ageToGroup, ageToJuvenileClass, normalizePersonName, nowIso, parseTermMonths } from "./normalize";
@@ -189,7 +190,8 @@ async function upsertReport(
     ...(item.suspects ?? []).map((p, i) =>
       db
         .prepare(
-          `INSERT INTO report_persons (report_id, seq, person_ref, gender, age, age_group, juvenile_class, plea, occupation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO report_persons (report_id, seq, person_ref, gender, age, age_group, juvenile_class, plea, occupation,
+             nationality, nationality_code, residence_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id, i, p.person_ref ?? null, p.gender ?? null, item.is_juvenile ? null : (p.age ?? null),
@@ -197,6 +199,9 @@ async function upsertReport(
           p.juvenile_class ?? ageToJuvenileClass(p.age) ?? (item.is_juvenile ? "juvenile" : null),
           p.plea ?? null,
           p.occupation ?? null,
+          normalizeNationality(p.nationality)?.name ?? null,
+          normalizeNationality(p.nationality)?.code ?? null,
+          p.residence_status ?? null,
         ),
     ),
   ];
@@ -284,6 +289,31 @@ async function upsertJudgment(
   }
   const age = item.is_juvenile ? null : (d?.age ?? null);
   const police = normalizePoliceAgency(item.police_agency);
+  // 国籍・在留資格は判決報道に書かれないことが多いので、性別と同じく確度の高い逮捕報道から引き継ぐ
+  let nat = normalizeNationality(d?.nationality);
+  let residence: string | null = d?.residence_status ?? null;
+  let natInherited = 0;
+  if ((!nat || !residence) && item.link_confidence !== "low" && d?.person_ref) {
+    const prev = await db
+      .prepare(
+        `SELECT p.nationality, p.nationality_code, p.residence_status FROM report_persons p JOIN reports r ON r.id = p.report_id
+         WHERE r.case_id = ? AND p.person_ref = ? AND (p.nationality IS NOT NULL OR p.residence_status IS NOT NULL)
+           AND (r.link_confidence IS NULL OR r.link_confidence = 'high')
+         ORDER BY r.reported_at DESC LIMIT 1`,
+      )
+      .bind(caseId, d.person_ref)
+      .first<{ nationality: string | null; nationality_code: string | null; residence_status: string | null }>();
+    if (prev) {
+      if (!nat && prev.nationality) {
+        nat = { name: prev.nationality, code: prev.nationality_code };
+        natInherited = 1;
+      }
+      if (!residence && prev.residence_status) {
+        residence = prev.residence_status;
+        natInherited = 1;
+      }
+    }
+  }
 
   const stmts: D1PreparedStatement[] = [
     db
@@ -339,12 +369,15 @@ async function upsertJudgment(
     db
       .prepare(
         `UPDATE judgments SET prefecture = ?, city = ?, police_agency = ?, police_prefecture = ?, prosecutor_office = ?,
-           motive = ?, weapon = ?, accomplice_count = ?, location_type = ?, defendant_occupation = ? WHERE id = ?`,
+           motive = ?, weapon = ?, accomplice_count = ?, location_type = ?, defendant_occupation = ?,
+           defendant_nationality = ?, defendant_nationality_code = ?, defendant_residence_status = ?, nationality_inherited = ?
+         WHERE id = ?`,
       )
       .bind(
         item.prefecture ?? null, item.is_juvenile ? null : (item.city ?? null), police?.name ?? null,
         police?.prefecture ?? null, normalizeProsecutorOffice(item.prosecutor_office),
-        ...circumstanceValues(item.circumstances), d?.occupation ?? null, id,
+        ...circumstanceValues(item.circumstances), d?.occupation ?? null,
+        nat?.name ?? null, nat?.code ?? null, residence, natInherited, id,
       ),
     ...victimStatements(db, "judgment", id, item.victims),
     db.prepare("DELETE FROM judgment_charges WHERE judgment_id = ?").bind(id),

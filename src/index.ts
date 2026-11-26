@@ -10,6 +10,7 @@ import { rescanFlags } from "./rescan";
 import { addAlias, listFlagged, reclassifyAll, reviewFlag, setCaseStatus } from "./admin";
 import { ADMIN_PAGE } from "./admin-page";
 import { PREF_EXPR, prefectureStats, type PrefBasis } from "./prefstats";
+import { nationalityStats } from "./natstats";
 
 // D1 の 1 行あたりの上限（約 2MB）に収まるよう、原本の保存を考えて 1MB までにする
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -197,7 +198,8 @@ app.get("/api/v1/cases/:id", async (c) => {
        JOIN reports r ON r.id = rc.report_id LEFT JOIN laws l ON l.code = rc.law_code WHERE r.case_id = ? ORDER BY rc.seq`,
     ).bind(kase.id),
     db.prepare(
-      `SELECT p.report_id, p.gender, CASE WHEN ?2 = 1 THEN NULL ELSE p.age END AS age, p.age_group, p.juvenile_class, p.plea, p.occupation
+      `SELECT p.report_id, p.gender, CASE WHEN ?2 = 1 THEN NULL ELSE p.age END AS age, p.age_group, p.juvenile_class, p.plea, p.occupation,
+              p.nationality, p.nationality_code, p.residence_status
        FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = ?1 ORDER BY p.seq`,
     ).bind(kase.id, kase.is_juvenile),
     db.prepare(
@@ -295,6 +297,12 @@ app.post("/api/v1/admin/reclassify", async (c) => c.json(await reclassifyAll(c.e
 app.get("/api/v1/admin/prefecture-stats", async (c) => {
   const q = c.req.query();
   return c.json(await prefectureStats(c.env.DB, { basis: q.basis as PrefBasis, from: q.from, to: q.to, law: q.law }));
+});
+
+/** 国籍別の集計（from、to、law、prefecture）。数える単位は人 */
+app.get("/api/v1/admin/nationality-stats", async (c) => {
+  const q = c.req.query();
+  return c.json(await nationalityStats(c.env.DB, { from: q.from, to: q.to, law: q.law, prefecture: q.prefecture }));
 });
 
 app.get("/api/v1/admin/flagged", async (c) =>
