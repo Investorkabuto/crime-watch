@@ -158,3 +158,7 @@ describe("国籍の正規化", () => {
     expect(residenceGroup("不明")).toBeNull();
   });
 });
+
+describe("在留資格（仮放免）", () => {
+  it("仮放免は来日外国人に数える", () => expect(residenceGroup("仮放免")).toBe("来日外国人"));
+});

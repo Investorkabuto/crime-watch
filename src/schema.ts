@@ -12,6 +12,10 @@ export const PREFECTURES = [
   "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県",
 ] as const;
 
+export const REPORT_STAGES = [
+  "発生", "逮捕", "再逮捕", "送検", "起訴", "略式起訴", "処分保留", "不起訴", "家裁送致", "控訴", "上告", "確定",
+] as const;
+
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD 形式で指定してください");
 const dateTime = z
   .string()
@@ -89,7 +93,9 @@ export const reportSchema = z
     type: z.literal("report"),
     ...common,
     // 控訴・上告・確定は「被告側が控訴した」「判決が確定した」などの報道（判決そのものは judgment で送る）
-    stage: z.enum(["発生", "逮捕", "再逮捕", "送検", "起訴", "控訴", "上告", "確定"]),
+    // 不起訴・処分保留・略式起訴・家裁送致は、事件がそこで終わる（または家裁に移る）ことを表す報道
+    stage: z.enum(REPORT_STAGES),
+    non_prosecution_reason: z.enum(["起訴猶予", "嫌疑不十分", "嫌疑なし", "不明"]).optional(),
     reported_at: dateTime,
     occurred_on: date.optional(),
     prefecture: z.enum(PREFECTURES),
@@ -105,7 +111,7 @@ export const judgmentSchema = z
     type: z.literal("judgment"),
     ...common,
     court: z.string().min(1).max(100),
-    instance: z.enum(["一審", "控訴審", "上告審", "家裁審判"]).nullable().optional(),
+    instance: z.enum(["一審", "控訴審", "上告審", "家裁審判", "略式命令"]).nullable().optional(),
     decided_on: date,
     reported_at: dateTime.optional(),
     occurred_on: date.optional(),

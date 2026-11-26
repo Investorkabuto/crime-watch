@@ -96,6 +96,11 @@ a { color: var(--accent); }
           <option value="">公開中のみ</option>
           <option value="hidden">非公開のみ</option>
         </select>
+        <select name="progress">
+          <option value="">すべての進み具合</option>
+          <option>捜査中</option><option>処分保留</option><option>公判中</option><option>略式手続</option>
+          <option>判決後（未確定）</option><option>確定</option><option>不起訴</option><option>家裁送致</option>
+        </select>
         <label><input type="checkbox" name="flagged" value="1"> 要確認のみ</label>
         <input type="hidden" name="pref_basis" value="">
         <button class="btn primary" type="submit">検索</button>
@@ -256,6 +261,13 @@ a { color: var(--accent); }
 
   // ===== 事件 =====
   $("#caseFilter").addEventListener("submit", (e) => { e.preventDefault(); renderCases(); });
+  // 確定・不起訴などで終わっていない事件は、最後の報道・判決からの日数を添える（長く動きのない事件を見つけるため）
+  const OPEN_PROGRESS = ["捜査中", "処分保留", "公判中", "略式手続", "判決後（未確定）"];
+  function daysSince(c) {
+    if (!OPEN_PROGRESS.includes(c.progress) || !c.latest_at) return "";
+    const d = Math.floor((Date.now() - Date.parse(c.latest_at)) / 86400000);
+    return d >= 30 ? ' <span class="muted">（' + d + "日）</span>" : "";
+  }
   // 都道府県を手で選び直したら、発生地の基準に戻す
   $("#caseFilter select[name=prefecture]").addEventListener("change", () => { $("#caseFilter input[name=pref_basis]").value = ""; });
   async function renderCases() {
@@ -271,8 +283,9 @@ a { color: var(--accent); }
     const note = fd.get("prefecture") && basis && basis !== "occurrence"
       ? '<p class="muted">都道府県は「' + esc(BASIS_LABEL[basis]) + "」の基準で絞り込んでいます（一覧の都道府県の列は発生地です）。</p>" : "";
     $("#caseList").innerHTML = note + (r.cases.length === 0 ? '<p class="muted">該当する事件はありません。</p>' :
-      '<table><thead><tr><th>最新</th><th>段階</th><th>見出し</th><th class="hide-sm">都道府県</th><th></th></tr></thead><tbody>' +
-      r.cases.map((c) => '<tr class="click" data-id="' + esc(c.id) + '"><td>' + esc((c.latest_at || "").slice(0, 10)) + "</td><td>" + esc(c.latest_stage) + "</td><td>" + esc(c.title) +
+      '<table><thead><tr><th>最新</th><th>段階</th><th class="hide-sm">進み具合</th><th>見出し</th><th class="hide-sm">都道府県</th><th></th></tr></thead><tbody>' +
+      r.cases.map((c) => '<tr class="click" data-id="' + esc(c.id) + '"><td>' + esc((c.latest_at || "").slice(0, 10)) + "</td><td>" + esc(c.latest_stage) +
+        '</td><td class="hide-sm">' + esc(c.progress || "") + daysSince(c) + "</td><td>" + esc(c.title) +
         '</td><td class="hide-sm">' + esc(c.prefecture) + (c.city ? " " + esc(c.city) : "") + "</td><td>" +
         (c.flagged ? '<span class="tag warn">要確認</span>' : "") + (c.status === "hidden" ? '<span class="tag danger">非公開</span>' : "") +
         (c.is_juvenile ? '<span class="tag">少年</span>' : "") + (c.backfill ? '<span class="tag">過去分</span>' : "") + "</td></tr>").join("") +
@@ -319,6 +332,7 @@ a { color: var(--accent); }
           "<dt>発生</dt><dd>" + esc([r.occurred_on, r.prefecture, r.city].filter(Boolean).join(" ")) + "</dd>" +
           (r.police_agency || r.police_station ? "<dt>警察</dt><dd>" + esc([r.police_agency, r.police_station].filter(Boolean).join(" ")) + "</dd>" : "") +
           (r.prosecutor_office ? "<dt>検察</dt><dd>" + esc(r.prosecutor_office) + "</dd>" : "") +
+          (r.non_prosecution_reason ? "<dt>不起訴の理由</dt><dd>" + esc(r.non_prosecution_reason) + "</dd>" : "") +
           (sus ? "<dt>被疑者</dt><dd>" + esc(sus) + "</dd>" : "") + extraRows(r) +
           '<dt>出典</dt><dd><a href="' + esc(r.source_url) + '" target="_blank" rel="noopener noreferrer">' + esc(r.source_name || r.source_url) + "</a></dd></dl></div>";
       }
@@ -349,7 +363,7 @@ a { color: var(--accent); }
       '<button class="btn ' + (hidden ? "primary" : "danger") + '" id="toggleStatus">' + (hidden ? "公開に戻す" : "非公開にする") + "</button></div>" +
       '<div class="panel"><h2>' + esc(k.title) + "</h2>" +
       (hidden ? '<span class="tag danger">非公開</span>' : "") + (k.is_juvenile ? '<span class="tag">少年事件</span>' : "") + (k.flagged ? '<span class="tag warn">要確認</span>' : "") +
-      '<dl class="kv"><dt>case_ref</dt><dd>' + esc(k.case_ref) + "</dd><dt>最新の段階</dt><dd>" + esc(k.latest_stage) + "</dd><dt>発生</dt><dd>" + esc([k.occurred_on, k.prefecture, k.city].filter(Boolean).join(" ")) + "</dd></dl></div>" +
+      '<dl class="kv"><dt>case_ref</dt><dd>' + esc(k.case_ref) + "</dd><dt>最新の段階</dt><dd>" + esc(k.latest_stage) + (k.progress ? "（" + esc(k.progress) + "）" : "") + "</dd><dt>発生</dt><dd>" + esc([k.occurred_on, k.prefecture, k.city].filter(Boolean).join(" ")) + "</dd></dl></div>" +
       '<div class="panel"><h2>時系列</h2><div class="timeline">' + evHtml + "</div></div>";
     $("#detail").style.display = "block";
     $("#toggleStatus").onclick = async () => {

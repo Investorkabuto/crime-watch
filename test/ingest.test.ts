@@ -413,6 +413,41 @@ describe("要確認の確認済み", () => {
   });
 });
 
+describe("事件の進み具合", () => {
+  const prog = async (ref: string) => ((await (await view("/api/v1/cases/" + ref)).json()) as Json).case.progress;
+  const base = () => {
+    const { city: _c, suspects: _s, ...r } = report.items[0] as Json;
+    return r;
+  };
+  it("逮捕→起訴→判決→確定で進み具合が変わる", async () => {
+    await signedIngest({ items: [{ ...base(), external_id: "pg-1", case_ref: "case-pg", stage: "逮捕", reported_at: "2026-05-01T10:00:00+09:00" }] });
+    expect(await prog("case-pg")).toBe("捜査中");
+    await signedIngest({ items: [{ ...base(), external_id: "pg-2", case_ref: "case-pg", stage: "起訴", reported_at: "2026-05-20T10:00:00+09:00" }] });
+    expect(await prog("case-pg")).toBe("公判中");
+    await signedIngest({ items: [{ ...judgment.items[0], external_id: "pg-3", case_ref: "case-pg", decided_on: "2026-09-01" }] });
+    expect(await prog("case-pg")).toBe("判決後（未確定）");
+    await signedIngest({ items: [{ ...base(), external_id: "pg-4", case_ref: "case-pg", stage: "確定", reported_at: "2026-09-20T10:00:00+09:00" }] });
+    expect(await prog("case-pg")).toBe("確定");
+  });
+  it("不起訴で終わる事件と理由", async () => {
+    await signedIngest({ items: [{ ...base(), external_id: "pg-5", case_ref: "case-pg2", stage: "逮捕", reported_at: "2026-05-01T10:00:00+09:00" }] });
+    await signedIngest({
+      items: [{ ...base(), external_id: "pg-6", case_ref: "case-pg2", stage: "不起訴", non_prosecution_reason: "不明", reported_at: "2026-05-22T10:00:00+09:00" }],
+    });
+    const d = (await (await view("/api/v1/cases/case-pg2")).json()) as Json;
+    expect(d.case.progress).toBe("不起訴");
+    expect(d.reports.find((r: Json) => r.external_id === "pg-6").non_prosecution_reason).toBe("不明");
+    const list = (await (await view("/api/v1/cases?progress=" + encodeURIComponent("不起訴") + "&limit=200")).json()) as Json;
+    expect(list.cases.some((c: Json) => c.case_ref === "case-pg2")).toBe(true);
+  });
+  it("略式命令は略式手続", async () => {
+    await signedIngest({
+      items: [{ ...judgment.items[0], external_id: "pg-7", case_ref: "case-pg3", court: "東京簡裁", instance: "略式命令", sentence: { type: "罰金", fine_yen: 300000 } }],
+    });
+    expect(await prog("case-pg3")).toBe("略式手続");
+  });
+});
+
 describe("国籍", () => {
   it("報道の国籍・在留資格を保存し、判決に引き継ぎ、国籍別に人数で集計する（記載なしは日本国籍とみなさない）", async () => {
     const r = {

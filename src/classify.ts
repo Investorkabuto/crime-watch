@@ -115,6 +115,15 @@ export function classifyCharges(charges: string[], aliases: AliasMap): Classifie
       const { text, modifier } = extractModifier(normalized);
       let hit = lookup(text, aliases);
       let finalText = text;
+      // 「有印私文書偽造・同行使」「通貨偽造・同行使」の「同〜」は、直前の罪状と同じ法律の罪
+      if (!hit && /^同/.test(text) && out.length > 0) {
+        const prev = out[out.length - 1]!;
+        if (prev.lawCode) {
+          out.push({ raw, text: prev.text + "・" + text, lawCode: prev.lawCode, modifier, matchedAlias: prev.matchedAlias });
+          prevNormalized = prev.text;
+          continue;
+        }
+      }
       // 「死体損壊・遺棄」のように前の罪状と頭が共通する省略形を補う
       if (!hit && prevNormalized && text.length < prevNormalized.length) {
         const candidate = prevNormalized.slice(0, prevNormalized.length - text.length) + text;
