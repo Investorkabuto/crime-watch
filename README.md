@@ -58,3 +58,6 @@ npm run deploy
 ```
 
 トークンと鍵はリポジトリや Notion に書かず、Muse には別の方法で渡す。
+
+**注意**: ダッシュボードで登録する場合は、種類を必ず「Secret」（暗号化）にする。「Text」で登録すると、
+`wrangler.jsonc` に `vars` があるため、デプロイのたびに消える（`keep_vars: true` で防いでいるが、Secret にするのが正しい）。
