@@ -1,0 +1,613 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crime-watch.invalid/schema/ingest.schema.json",
+  "title": "Crime Watch 受信データ（Muse → Crime Watch）",
+  "description": "POST /api/v1/ingest のリクエスト本文。要件定義書 §5 に対応する。v1。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/report"
+          },
+          {
+            "$ref": "#/$defs/judgment"
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "nonEmpty": {
+      "type": "string",
+      "minLength": 1
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "YYYY-MM-DD（日本時間）"
+    },
+    "dateTime": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "description": "ISO 8601。タイムゾーン必須（例: 2026-11-26T10:30:00+09:00）"
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^https?://",
+      "maxLength": 2000
+    },
+    "term": {
+      "type": "string",
+      "pattern": "^(\\d+年)?(\\d+(月|か月|カ月|ヶ月))?$",
+      "minLength": 2,
+      "description": "期間。例: \"3年\", \"2年6月\", \"10月\""
+    },
+    "prefecture": {
+      "enum": [
+        "北海道",
+        "青森県",
+        "岩手県",
+        "宮城県",
+        "秋田県",
+        "山形県",
+        "福島県",
+        "茨城県",
+        "栃木県",
+        "群馬県",
+        "埼玉県",
+        "千葉県",
+        "東京都",
+        "神奈川県",
+        "新潟県",
+        "富山県",
+        "石川県",
+        "福井県",
+        "山梨県",
+        "長野県",
+        "岐阜県",
+        "静岡県",
+        "愛知県",
+        "三重県",
+        "滋賀県",
+        "京都府",
+        "大阪府",
+        "兵庫県",
+        "奈良県",
+        "和歌山県",
+        "鳥取県",
+        "島根県",
+        "岡山県",
+        "広島県",
+        "山口県",
+        "徳島県",
+        "香川県",
+        "愛媛県",
+        "高知県",
+        "福岡県",
+        "佐賀県",
+        "長崎県",
+        "熊本県",
+        "大分県",
+        "宮崎県",
+        "鹿児島県",
+        "沖縄県"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "$ref": "#/$defs/url"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "person": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "被疑者・被告人の属性。氏名・氏名のハッシュは入れない。",
+      "properties": {
+        "person_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Muse が人物ごとに発行するランダムな ID（同じ事件の報道と判決で同じ人物を対応づけるため）。氏名のハッシュそのものは使わない。"
+        },
+        "gender": {
+          "enum": [
+            "male",
+            "female",
+            "unknown"
+          ]
+        },
+        "age": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 120
+        },
+        "age_group": {
+          "type": "string",
+          "pattern": "^(10歳未満|[1-9]0代|100歳以上)$"
+        },
+        "juvenile_class": {
+          "enum": [
+            "juvenile",
+            "specified_juvenile",
+            "adult",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "report": {
+      "description": "事件の報道（発生・逮捕・再逮捕・送検・起訴）",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "external_id",
+        "case_ref",
+        "title",
+        "summary",
+        "charges",
+        "is_juvenile",
+        "source_url",
+        "stage",
+        "reported_at",
+        "prefecture"
+      ],
+      "properties": {
+        "type": {
+          "const": "report"
+        },
+        "external_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "case_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "link_confidence": {
+          "enum": [
+            "high",
+            "low"
+          ]
+        },
+        "backfill": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "charges": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "is_juvenile": {
+          "type": "boolean"
+        },
+        "source_url": {
+          "$ref": "#/$defs/url"
+        },
+        "source_name": {
+          "type": "string"
+        },
+        "additional_sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "stage": {
+          "enum": [
+            "発生",
+            "逮捕",
+            "再逮捕",
+            "送検",
+            "起訴"
+          ]
+        },
+        "reported_at": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "occurred_on": {
+          "$ref": "#/$defs/date"
+        },
+        "prefecture": {
+          "$ref": "#/$defs/prefecture"
+        },
+        "city": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "suspects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/person"
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "is_juvenile": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "city"
+          ]
+        },
+        "properties": {
+          "suspects": {
+            "items": {
+              "not": {
+                "required": [
+                  "age"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "judgment": {
+      "description": "判決（被告人 1 人につき 1 件）",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "external_id",
+        "case_ref",
+        "title",
+        "summary",
+        "charges",
+        "is_juvenile",
+        "source_url",
+        "court",
+        "decided_on",
+        "sentence"
+      ],
+      "properties": {
+        "type": {
+          "const": "judgment"
+        },
+        "external_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "case_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "link_confidence": {
+          "enum": [
+            "high",
+            "low"
+          ]
+        },
+        "backfill": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "charges": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "is_juvenile": {
+          "type": "boolean"
+        },
+        "source_url": {
+          "$ref": "#/$defs/url"
+        },
+        "source_name": {
+          "type": "string"
+        },
+        "additional_sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "court": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "instance": {
+          "enum": [
+            "一審",
+            "控訴審",
+            "上告審",
+            "家裁審判",
+            null
+          ]
+        },
+        "decided_on": {
+          "$ref": "#/$defs/date"
+        },
+        "reported_at": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "occurred_on": {
+          "$ref": "#/$defs/date",
+          "description": "犯行日（分かれば）。行為時点の法定刑の判定に使う"
+        },
+        "prefecture": {
+          "$ref": "#/$defs/prefecture"
+        },
+        "judges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "role"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 50
+              },
+              "role": {
+                "enum": [
+                  "裁判長",
+                  "右陪席",
+                  "左陪席",
+                  "単独",
+                  "不明"
+                ]
+              }
+            }
+          }
+        },
+        "lay_judge_trial": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sentence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "死刑",
+                "無期拘禁刑",
+                "無期懲役",
+                "無期禁錮",
+                "拘禁刑",
+                "懲役",
+                "禁錮",
+                "罰金",
+                "拘留",
+                "科料",
+                "無罪",
+                "免訴",
+                "公訴棄却",
+                "保護処分"
+              ]
+            },
+            "term": {
+              "$ref": "#/$defs/term"
+            },
+            "indeterminate": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "min",
+                "max"
+              ],
+              "description": "少年の不定期刑（例: 5年以上10年以下）",
+              "properties": {
+                "min": {
+                  "$ref": "#/$defs/term"
+                },
+                "max": {
+                  "$ref": "#/$defs/term"
+                }
+              }
+            },
+            "suspended": {
+              "$ref": "#/$defs/term",
+              "description": "執行猶予の期間。実刑なら省略"
+            },
+            "probation": {
+              "type": "boolean"
+            },
+            "fine_yen": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "罰金（拘禁刑との併科も含む）"
+            },
+            "detention_credit_days": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "other": {
+              "type": "string",
+              "maxLength": 500,
+              "description": "没収・追徴など"
+            },
+            "protective_disposition": {
+              "enum": [
+                "保護観察",
+                "少年院送致",
+                "児童自立支援施設等送致",
+                "不処分",
+                "審判不開始",
+                "検察官送致"
+              ]
+            }
+          }
+        },
+        "demand": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "検察の求刑",
+          "properties": {
+            "type": {
+              "enum": [
+                "死刑",
+                "無期拘禁刑",
+                "無期懲役",
+                "無期禁錮",
+                "拘禁刑",
+                "懲役",
+                "禁錮",
+                "罰金",
+                "拘留",
+                "科料"
+              ]
+            },
+            "term": {
+              "$ref": "#/$defs/term"
+            },
+            "fine_yen": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "defendant": {
+          "$ref": "#/$defs/person"
+        },
+        "factors": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prior_record": {
+              "enum": [
+                "none",
+                "yes",
+                "same_kind",
+                "unknown"
+              ]
+            },
+            "plea": {
+              "enum": [
+                "admit",
+                "deny",
+                "partial",
+                "unknown"
+              ]
+            },
+            "settlement": {
+              "enum": [
+                "yes",
+                "no",
+                "unknown"
+              ]
+            },
+            "damage_yen": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "victim_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "harm_result": {
+              "enum": [
+                "death",
+                "serious",
+                "minor",
+                "none",
+                "unknown"
+              ]
+            },
+            "adjustments": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "appeal_status": {
+          "enum": [
+            "控訴",
+            "上告",
+            "確定",
+            "不明"
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "is_juvenile": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "defendant": {
+            "not": {
+              "required": [
+                "age"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

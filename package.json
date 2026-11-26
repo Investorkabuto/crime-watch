@@ -1,0 +1,27 @@
+{
+  "name": "crime-watch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply crime-watch --local",
+    "db:migrate:remote": "wrangler d1 migrations apply crime-watch --remote",
+    "test": "node scripts/validate-schema.mjs && vitest run",
+    "typecheck": "tsc --noEmit",
+    "sign": "node scripts/sign-request.mjs"
+  },
+  "dependencies": {
+    "hono": "4.13.22",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "@cloudflare/workers-types": "^5.20261125.1",
+    "ajv": "^8.17.1",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.124.0"
+  }
+}

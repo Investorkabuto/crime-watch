@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "crime-watch",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": {
+    // "false" の間は閲覧系 API に VIEWER_TOKEN が必要（試行中は非公開）
+    "SITE_PUBLIC": "false",
+    // HMAC 署名のタイムスタンプ許容誤差（秒）
+    "SIGNATURE_TOLERANCE_SEC": "300"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "crime-watch",
+      "database_id": "611b307d-3181-405d-a5b7-012469657406",
+      "migrations_dir": "migrations"
+    }
+  ]
+  // 秘密情報（wrangler secret put で設定。リポジトリには書かない）:
+  //   INGEST_TOKEN  : Muse が Authorization: Bearer に付けるトークン
+  //   INGEST_HMAC_SECRET : 署名用の鍵
+  //   VIEWER_TOKEN  : 非公開期間中の閲覧用トークン
+}
