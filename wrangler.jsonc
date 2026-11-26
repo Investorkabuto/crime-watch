@@ -5,6 +5,8 @@
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // デプロイ時に、ダッシュボードで登録した変数を消さない（INGEST_TOKEN などは「Secret」で登録すること）
+  "keep_vars": true,
   "vars": {
     // "false" の間は閲覧系 API に VIEWER_TOKEN が必要（試行中は非公開）
     "SITE_PUBLIC": "false",
