@@ -7,6 +7,7 @@ import { MAX_ITEMS } from "./schema";
 import { nowIso } from "./normalize";
 import { trialStats } from "./stats";
 import { checkDatabase } from "./dbcheck";
+import { rescanFlags } from "./rescan";
 
 // D1 の 1 行あたりの上限（約 2MB）に収まるよう、原本の保存を考えて 1MB までにする
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -237,6 +238,9 @@ app.get("/api/v1/judgments", async (c) => {
 
 // ===== 管理・試行用 =====
 app.get("/api/v1/admin/trial-stats", async (c) => c.json(await trialStats(c.env.DB)));
+
+/** 自動チェックのルールを直した後に、保存済みの報道・判決の flags を付け直す */
+app.post("/api/v1/admin/rescan-flags", async (c) => c.json(await rescanFlags(c.env.DB)));
 
 /** 罪状辞書を更新した後に、保存済みの罪状を判定し直す */
 app.post("/api/v1/admin/reclassify", async (c) => {

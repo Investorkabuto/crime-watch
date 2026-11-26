@@ -211,6 +211,27 @@ describe("取り込み", () => {
   });
 });
 
+describe("自動チェックの付け直し", () => {
+  it("ルール変更前に付いた誤検出の flags を外す", async () => {
+    const item = { ...judgment.items[0], external_id: "rs-1", case_ref: "case-rs-1", summary: "会社役員の被告に判決" };
+    await signedIngest({ items: [item] });
+    // 古いルールで付いた flags を再現する
+    await env.DB.prepare("UPDATE judgments SET flags = ? WHERE external_id = 'rs-1'")
+      .bind(JSON.stringify([{ kind: "person_name", field: "summary", match: "会社役員の被告" }]))
+      .run();
+    const res = await SELF.fetch("https://cw.test/api/v1/admin/rescan-flags", {
+      method: "POST",
+      headers: { Authorization: "Bearer test-viewer-token" },
+    });
+    const body = (await res.json()) as Json;
+    expect(body.changed).toBeGreaterThanOrEqual(1);
+    const row = await env.DB.prepare("SELECT flags FROM judgments WHERE external_id = 'rs-1'").first<Json>();
+    expect(row?.flags).toBeNull();
+    const kase = await env.DB.prepare("SELECT flagged FROM cases WHERE case_ref = 'case-rs-1'").first<Json>();
+    expect(kase?.flagged).toBe(0);
+  });
+});
+
 describe("閲覧 API（非公開）", () => {
   it("トークンなしでは見られない", async () => {
     const res = await SELF.fetch("https://cw.test/api/v1/cases");
