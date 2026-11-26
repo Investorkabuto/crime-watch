@@ -79,7 +79,7 @@ export function normalizeNationality(raw: string | undefined | null): Nationalit
 /** 在留資格の区分（記事に書かれる範囲。分からなければ送らない） */
 export const RESIDENCE_STATUSES = [
   "永住者", "特別永住者", "定住者", "日本人の配偶者等", "永住者の配偶者等",
-  "技能実習", "特定技能", "留学", "家族滞在", "技術・人文知識・国際業務", "短期滞在",
+  "技能実習", "特定技能", "留学", "家族滞在", "技術・人文知識・国際業務", "短期滞在", "仮放免",
   "不法残留", "不法入国", "その他", "不明",
 ] as const;
 

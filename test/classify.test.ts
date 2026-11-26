@@ -119,3 +119,17 @@ describe("総称の法律（0006）", () => {
     expect(classifyCharges([charge], aliases)[0]?.lawCode).toBe(law);
   });
 });
+
+describe("第2波の罪名（0009）", () => {
+  it("「同行使」は直前の罪状と同じ法律", () => {
+    expect(classifyCharges(["有印私文書偽造・同行使"], aliases).map((c) => [c.text, c.lawCode])).toEqual([
+      ["有印私文書偽造", "forgery"],
+      ["有印私文書偽造・同行使", "forgery"],
+    ]);
+    expect(classifyCharges(["通貨偽造・同行使"], aliases).map((c) => c.lawCode)).toEqual(["forgery", "forgery"]);
+  });
+  it("売春防止法", () => {
+    expect(classifyCharges(["売春防止法違反（管理売春）"], aliases)[0]?.lawCode).toBe("prostitution");
+    expect(classifyCharges(["売春防止法管理売春"], aliases)[0]?.lawCode).toBe("prostitution");
+  });
+});

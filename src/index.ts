@@ -130,6 +130,10 @@ app.get("/api/v1/cases", async (c) => {
   if (q.status === "hidden") where.push("c.status = 'hidden'");
   else if (q.status !== "all") where.push("c.status = 'published'");
   if (q.flagged === "1") where.push("c.flagged = 1");
+  if (q.progress) {
+    where.push("c.progress = ?");
+    binds.push(q.progress);
+  }
   if (q.q) {
     where.push("(c.title LIKE ? OR c.summary LIKE ? OR c.case_ref = ?)");
     binds.push(`%${q.q}%`, `%${q.q}%`, q.q);
@@ -163,7 +167,7 @@ app.get("/api/v1/cases", async (c) => {
   const offset = Math.max(Number(q.offset) || 0, 0);
   const { results } = await c.env.DB.prepare(
     `SELECT c.id, c.case_ref, c.title, c.summary, c.occurred_on, c.prefecture,
-            c.city, c.is_juvenile, c.latest_stage, c.latest_at, c.backfill, c.flagged
+            c.city, c.is_juvenile, c.latest_stage, c.progress, c.latest_at, c.backfill, c.flagged
             , c.status
      FROM cases c ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY c.latest_at DESC LIMIT ? OFFSET ?`,
   )
@@ -178,7 +182,7 @@ app.get("/api/v1/cases/:id", async (c) => {
   const kase = await db
     .prepare(
       `SELECT id, case_ref, title, summary, occurred_on, prefecture, city,
-              is_juvenile, latest_stage, latest_at, backfill, flagged, status FROM cases WHERE id = ? OR case_ref = ?`,
+              is_juvenile, latest_stage, progress, latest_at, backfill, flagged, status FROM cases WHERE id = ? OR case_ref = ?`,
     )
     .bind(id, id)
     .first<{ id: string; is_juvenile: number }>();
@@ -187,7 +191,7 @@ app.get("/api/v1/cases/:id", async (c) => {
     db.prepare(
       `SELECT id, external_id, stage, title, summary, reported_at, occurred_on, prefecture,
               city, police_agency, police_prefecture, police_station, prosecutor_office,
-              motive, weapon, accomplice_count, location_type,
+              motive, weapon, accomplice_count, location_type, non_prosecution_reason,
               link_confidence, backfill, source_url, source_name,
               additional_sources, flags FROM reports WHERE case_id = ?1 ORDER BY reported_at`,
     ).bind(kase.id),

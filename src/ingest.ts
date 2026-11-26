@@ -176,12 +176,13 @@ async function upsertReport(
     db
       .prepare(
         `UPDATE reports SET police_agency = ?, police_prefecture = ?, police_station = ?, prosecutor_office = ?,
-           motive = ?, weapon = ?, accomplice_count = ?, location_type = ? WHERE id = ?`,
+           motive = ?, weapon = ?, accomplice_count = ?, location_type = ?, non_prosecution_reason = ? WHERE id = ?`,
       )
       .bind(
         police?.name ?? null, police?.prefecture ?? null,
         normalizePoliceStation(item.police_station),
-        normalizeProsecutorOffice(item.prosecutor_office), ...circumstanceValues(item.circumstances), id,
+        normalizeProsecutorOffice(item.prosecutor_office), ...circumstanceValues(item.circumstances),
+        item.non_prosecution_reason ?? null, id,
       ),
     ...victimStatements(db, "report", id, item.victims),
     db.prepare("DELETE FROM report_charges WHERE report_id = ?").bind(id),
@@ -391,6 +392,36 @@ async function upsertJudgment(
   return found ? "updated" : "created";
 }
 
+/** 最新の段階から、事件の進み具合を決める */
+export function progressOf(stage: string): string | null {
+  switch (stage) {
+    case "発生":
+    case "逮捕":
+    case "再逮捕":
+    case "送検":
+      return "捜査中";
+    case "処分保留":
+      return "処分保留";
+    case "起訴":
+      return "公判中";
+    case "略式起訴":
+    case "略式命令":
+      return "略式手続";
+    case "判決":
+    case "控訴":
+    case "上告":
+      return "判決後（未確定）";
+    case "確定":
+      return "確定";
+    case "不起訴":
+      return "不起訴";
+    case "家裁送致":
+      return "家裁送致";
+    default:
+      return null;
+  }
+}
+
 /** 事件の表示用の値（最新の段階・日付・都道府県など）を、ひも付いた報道・判決から計算し直す */
 export async function refreshCase(db: D1Database, caseId: string, now: string): Promise<void> {
   const [reports, judgments] = await db.batch([
@@ -401,7 +432,7 @@ export async function refreshCase(db: D1Database, caseId: string, now: string): 
        FROM reports r WHERE r.case_id = ?`,
     ).bind(caseId),
     db.prepare(
-      `SELECT j.appeal_status, j.title, j.summary, j.decided_on AS at, j.occurred_on, j.prefecture, j.city,
+      `SELECT j.appeal_status, j.instance, j.title, j.summary, j.decided_on AS at, j.occurred_on, j.prefecture, j.city,
               c.prefecture AS court_prefecture, j.backfill, j.flags,
               CASE WHEN j.flags IS NOT NULL AND NOT EXISTS (SELECT 1 FROM flag_reviews fr WHERE fr.parent_type = 'judgment' AND fr.parent_id = j.id AND fr.reviewed_flags = j.flags) THEN 1 ELSE 0 END AS pending,
               CASE WHEN j.juvenile_class IN ('juvenile','specified_juvenile') THEN 1 ELSE 0 END AS juv
@@ -411,9 +442,9 @@ export async function refreshCase(db: D1Database, caseId: string, now: string): 
   type Ev = { stage: string; title: string; summary: string; at: string; occurred_on: string | null; prefecture: string | null; city: string | null; court_prefecture?: string | null; backfill: number; flags: string | null; pending: number; juv: number };
   const events: Ev[] = [
     ...((reports?.results ?? []) as Ev[]),
-    ...((judgments?.results ?? []) as (Omit<Ev, "stage"> & { appeal_status: string })[]).map((j) => ({
+    ...((judgments?.results ?? []) as (Omit<Ev, "stage"> & { appeal_status: string; instance: string | null })[]).map((j) => ({
       ...j,
-      stage: j.appeal_status === "確定" ? "確定" : "判決",
+      stage: j.appeal_status === "確定" ? "確定" : j.instance === "略式命令" ? "略式命令" : "判決",
     })),
   ];
   if (!events.length) return;
@@ -431,11 +462,12 @@ export async function refreshCase(db: D1Database, caseId: string, now: string): 
   await db
     .prepare(
       `UPDATE cases SET title = ?2, summary = ?3, latest_stage = ?4, latest_at = ?5, occurred_on = ?6, prefecture = ?7,
-         city = ?8, is_juvenile = ?9, backfill = ?10, flagged = ?11, updated_at = ?12 WHERE id = ?1`,
+         city = ?8, is_juvenile = ?9, backfill = ?10, flagged = ?11, updated_at = ?12, progress = ?13 WHERE id = ?1`,
     )
     .bind(
       caseId, latest.title, latest.summary, latest.stage, key(latest), occurred, prefecture, city, juvenile ? 1 : 0,
       events.every((e) => e.backfill === 1) ? 1 : 0, events.some((e) => e.pending === 1) ? 1 : 0, now,
+      progressOf(latest.stage),
     )
     .run();
 }
