@@ -16,6 +16,9 @@ const MODIFIERS: [RegExp, string][] = [
   [/教唆/g, "instigation"],
 ];
 
+/** 総称の法律（具体的な罪名が分からないときの受け皿）。migrations/0006 */
+const GENERIC_LAWS = new Set(["road_traffic_other", "organized_crime"]);
+
 // 辞書より先に評価する組み合わせ規則（すべてのキーワードを含むときにその法律）
 const COMBINATION_RULES: { all: string[]; law: string }[] = [
   { all: ["覚醒剤", "営利"], law: "stimulants_profit" },
@@ -75,14 +78,17 @@ function lookup(text: string, aliases: AliasMap): { law: string; alias: string }
   for (const rule of COMBINATION_RULES) {
     if (rule.all.every((k) => text.includes(k))) return { law: rule.law, alias: rule.all.join("+") };
   }
-  const exact = aliases.get(text);
-  if (exact) return { law: exact, alias: text };
-  // 罪状に含まれる最も長い言い方を採用
+  // 罪状に含まれる最も長い言い方を採用する。ただし総称（「道路交通法」だけなど）は、
+  // 具体的な罪名がどれも含まれていないときにだけ使う
   let best: { law: string; alias: string } | null = null;
+  let generic: { law: string; alias: string } | null = null;
   for (const [alias, law] of aliases) {
-    if (text.includes(alias) && (!best || alias.length > best.alias.length)) best = { law, alias };
+    if (!text.includes(alias)) continue;
+    if (GENERIC_LAWS.has(law)) {
+      if (!generic || alias.length > generic.alias.length) generic = { law, alias };
+    } else if (!best || alias.length > best.alias.length) best = { law, alias };
   }
-  return best;
+  return best ?? generic;
 }
 
 /**

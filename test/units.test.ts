@@ -122,3 +122,14 @@ describe("捜査機関・検察庁の正規化", () => {
     expect(normalizePoliceStation("天満警察署")).toBe("天満署");
   });
 });
+
+describe("自動チェック（性犯罪の年齢）", () => {
+  const sex = { isJuvenile: false, isSexCrime: true };
+  it.each(["会社員の男（45）に判決", "被告（45）は起訴内容を認めた", "45歳の会社員の男に懲役6年", "52歳の被告に判決"])(
+    "被告人・被疑者の年齢は検出しない: %s",
+    (summary) => expect(detectPii({ summary }, sex).filter((f) => f.kind === "victim_age")).toEqual([]),
+  );
+  it.each(["女性（19）に対し", "当時16歳の女性に", "男児（8）にわいせつな行為"])("被害者の年齢は検出する: %s", (summary) => {
+    expect(detectPii({ summary }, sex).map((f) => f.kind)).toContain("victim_age");
+  });
+});
