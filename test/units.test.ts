@@ -72,3 +72,21 @@ describe("署名", () => {
     expect((await verifySignature({ secret: "k", timestamp: "1000", signature: sig, body: body + " ", toleranceSec: 300, nowSec: 1100 })).ok).toBe(false);
   });
 });
+
+describe("自動チェック（性犯罪）", () => {
+  it("正確な年齢、学校名、被告人との近しい関係を検出する", () => {
+    const kinds = detectPii(
+      { summary: "実の娘（15）に性的暴行を加えたとして、○○高校の教員の男に判決" },
+      { isJuvenile: false, isSexCrime: true },
+    ).map((x) => x.kind);
+    expect(kinds).toContain("victim_age");
+    expect(kinds).toContain("victim_relation");
+    expect(kinds).toContain("school");
+  });
+  it("年代の表記は検出しない", () => {
+    expect(detectPii({ summary: "10代の女性に対する不同意性交等の罪" }, { isJuvenile: false, isSexCrime: true })).toEqual([]);
+  });
+  it("性犯罪でなければ関係の表記は検出しない", () => {
+    expect(detectPii({ summary: "娘を連れて逃走" }, { isJuvenile: false, isSexCrime: false })).toEqual([]);
+  });
+});

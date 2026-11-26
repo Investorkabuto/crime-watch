@@ -79,3 +79,17 @@ describe("法律の判定（試行の 5 分類）", () => {
     expect(codes(["組織犯罪処罰法違反"])[0]?.[1]).toBeNull();
   });
 });
+
+describe("不同意性交等（0004）", () => {
+  it.each([
+    ["不同意性交等", "sexual_assault"],
+    ["強制性交等", "sexual_assault"],
+    ["準強制性交等", "sexual_assault"],
+    ["監護者性交等", "sexual_assault"],
+    ["不同意性交等致傷", "sexual_assault_injury"],
+    ["強姦致傷", "sexual_assault_injury"],
+  ])("%s → %s", (charge, law) => {
+    const [c] = classifyCharges([charge], aliases);
+    expect(c?.lawCode).toBe(law);
+  });
+});
