@@ -6,6 +6,7 @@ import { classifyCharges } from "./classify";
 import { MAX_ITEMS } from "./schema";
 import { nowIso } from "./normalize";
 import { trialStats } from "./stats";
+import { checkDatabase } from "./dbcheck";
 
 // D1 の 1 行あたりの上限（約 2MB）に収まるよう、原本の保存を考えて 1MB までにする
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -14,15 +15,9 @@ const app = new Hono<{ Bindings: Env }>();
 
 /** 死活確認。データベースのテーブルと初期データがそろっているかも返す */
 app.get("/api/v1/health", async (c) => {
-  try {
-    const r = await c.env.DB.prepare(
-      "SELECT (SELECT COUNT(*) FROM laws) AS laws, (SELECT COUNT(*) FROM charge_aliases) AS aliases",
-    ).first<{ laws: number; aliases: number }>();
-    const ready = !!r && r.laws > 0 && r.aliases > 0;
-    return c.json({ ok: ready, database: ready ? "ready" : "not_seeded", laws: r?.laws ?? 0, aliases: r?.aliases ?? 0 }, ready ? 200 : 503);
-  } catch {
-    return c.json({ ok: false, database: "not_migrated" }, 503);
-  }
+  const s = await checkDatabase(c.env.DB);
+  if (s.ready) return c.json({ ok: true, database: "ready", laws: s.laws, aliases: s.aliases });
+  return c.json({ ok: false, ...s }, 503);
 });
 
 // ===== 受信 API（Muse → Crime Watch）=====
@@ -54,11 +49,13 @@ app.post("/api/v1/ingest", async (c) => {
   const logId = crypto.randomUUID();
   const receivedAt = nowIso();
 
-  const dict = await loadDictionary(c.env.DB);
-  // 初期データ（罪状辞書）が入っていない状態で取り込むと全件が未分類になるため、受け付けない
-  if (dict.aliases.size === 0) {
-    return c.json({ error: "database_not_seeded", hint: "0002_seed_laws.sql が適用されていません" }, 503);
+  // DB がコードの前提とそろっていない状態で取り込むと、一部だけ失敗したり全件が未分類になったりするため、受け付けない
+  const dbStatus = await checkDatabase(c.env.DB);
+  if (!dbStatus.ready) {
+    const error = dbStatus.database === "not_seeded" ? "database_not_seeded" : dbStatus.database === "migration_pending" ? "database_migration_pending" : "database_not_ready";
+    return c.json({ error, ...dbStatus }, 503);
   }
+  const dict = await loadDictionary(c.env.DB);
   const results: ItemResult[] = [];
   for (let i = 0; i < items.length; i++) {
     try {
@@ -69,7 +66,8 @@ app.post("/api/v1/ingest", async (c) => {
         index: i,
         external_id: (items[i] as { external_id?: string })?.external_id ?? null,
         status: "rejected",
-        errors: [{ path: "", message: "internal_error" }],
+        // 送信元（認証済みの Muse）が原因を切り分けられるよう、例外の要旨を添える
+        errors: [{ path: "", message: `internal_error: ${String((e as Error)?.message ?? e).slice(0, 300)}` }],
       });
     }
   }

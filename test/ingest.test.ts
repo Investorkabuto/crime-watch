@@ -16,6 +16,24 @@ describe("死活確認", () => {
   });
 });
 
+describe("DB の状態の確認", () => {
+  it("後から追加した列がなければ migration_pending を返し、取り込みも断る", async () => {
+    await env.DB.exec("ALTER TABLE report_persons DROP COLUMN plea");
+    try {
+      const h = await SELF.fetch("https://cw.test/api/v1/health");
+      expect(h.status).toBe(503);
+      const hb = (await h.json()) as Json;
+      expect(hb.database).toBe("migration_pending");
+      expect(hb.missing[0]).toContain("report_persons.plea");
+      const res = await signedIngest(report);
+      expect(res.status).toBe(503);
+      expect(((await res.json()) as Json).error).toBe("database_migration_pending");
+    } finally {
+      await env.DB.exec("ALTER TABLE report_persons ADD COLUMN plea TEXT");
+    }
+  });
+});
+
 describe("受信 API の認証", () => {
   it("トークンが違えば 401", async () => {
     const res = await signedIngest(report, { token: "wrong" });
