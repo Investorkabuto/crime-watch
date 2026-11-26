@@ -364,6 +364,39 @@ describe("管理 API と管理画面", () => {
   });
 });
 
+describe("都道府県別の集計", () => {
+  it("発生地・警察・裁判所の基準で数え、判決の指標を出す", async () => {
+    // 発生は奈良県、捜査は大阪府警、判決は大阪地裁
+    const r = { ...report.items[0], external_id: "pf-r", case_ref: "case-pf", prefecture: "奈良県", city: "奈良市", police_agency: "大阪府警", occurred_on: "2026-02-01" };
+    const j = { ...judgment.items[0], external_id: "pf-j", case_ref: "case-pf", court: "大阪地裁", prefecture: "奈良県" };
+    await signedIngest({ items: [r, j] });
+    const get = async (qs: string) => (await (await view("/api/v1/admin/prefecture-stats?" + qs)).json()) as Json;
+    const pick = (d: Json, pref: string) => d.prefectures.find((p: Json) => p.prefecture === pref);
+
+    const occ = await get("basis=occurrence&from=2026-02-01&to=2026-02-01");
+    expect(occ.prefectures).toHaveLength(48);
+    expect(pick(occ, "奈良県").cases).toBe(1);
+    expect(pick(occ, "奈良県").judgments).toBe(1);
+    expect(pick(occ, "奈良県").suspended_rate).toBe(1);
+    expect(pick(occ, "奈良県").avg_ratio_to_demand).toBe(0.75);
+    expect(pick(occ, "奈良県").by_group[0]).toEqual({ category: "刑法犯", group_name: "知能犯", cases: 1 });
+    expect(pick(occ, "大阪府").cases).toBe(0);
+
+    const pol = await get("basis=police&from=2026-02-01&to=2026-02-01");
+    expect(pick(pol, "大阪府").cases).toBe(1);
+    expect(pick(pol, "奈良県").cases).toBe(0);
+
+    const court = await get("basis=court&from=2026-02-01&to=2026-02-01&law=fraud");
+    expect(pick(court, "大阪府").cases).toBe(1);
+    const none = await get("basis=court&from=2026-02-01&to=2026-02-01&law=murder");
+    expect(none.total_cases).toBe(0);
+
+    // 事件一覧も同じ基準で絞り込める
+    const list = (await (await view("/api/v1/cases?prefecture=" + encodeURIComponent("大阪府") + "&pref_basis=police&limit=200")).json()) as Json;
+    expect(list.cases.some((c: Json) => c.case_ref === "case-pf")).toBe(true);
+  });
+});
+
 describe("閲覧 API（非公開）", () => {
   it("トークンなしでは見られない", async () => {
     const res = await SELF.fetch("https://cw.test/api/v1/cases");
