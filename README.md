@@ -13,7 +13,7 @@
 
 | メソッド | パス | 認証 | 内容 |
 |---|---|---|---|
-| GET | `/api/v1/health` | なし | 死活確認 |
+| GET | `/api/v1/health` | なし | 死活確認。テーブルと初期データがそろっていれば `database: "ready"`（そろっていなければ 503） |
 | POST | `/api/v1/ingest` | Bearer `INGEST_TOKEN` + HMAC 署名 | Muse からのデータ受信（1 回 100 件まで） |
 | GET | `/api/v1/laws` | 閲覧 | 法律マスタと法定刑 |
 | GET | `/api/v1/cases` | 閲覧 | 事件一覧（`law`, `prefecture`, `from`, `to`, `limit`, `offset`） |

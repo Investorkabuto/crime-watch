@@ -6,13 +6,19 @@ import { classifyCharges } from "./classify";
 import { MAX_ITEMS } from "./schema";
 import { nowIso } from "./normalize";
 import { trialStats } from "./stats";
+import { checkDatabase } from "./dbcheck";
 
 // D1 の 1 行あたりの上限（約 2MB）に収まるよう、原本の保存を考えて 1MB までにする
 const MAX_BODY_BYTES = 1024 * 1024;
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get("/api/v1/health", (c) => c.json({ ok: true }));
+/** 死活確認。データベースのテーブルと初期データがそろっているかも返す */
+app.get("/api/v1/health", async (c) => {
+  const s = await checkDatabase(c.env.DB);
+  if (s.ready) return c.json({ ok: true, database: "ready", laws: s.laws, aliases: s.aliases });
+  return c.json({ ok: false, ...s }, 503);
+});
 
 // ===== 受信 API（Muse → Crime Watch）=====
 app.post("/api/v1/ingest", async (c) => {
@@ -43,6 +49,12 @@ app.post("/api/v1/ingest", async (c) => {
   const logId = crypto.randomUUID();
   const receivedAt = nowIso();
 
+  // DB がコードの前提とそろっていない状態で取り込むと、一部だけ失敗したり全件が未分類になったりするため、受け付けない
+  const dbStatus = await checkDatabase(c.env.DB);
+  if (!dbStatus.ready) {
+    const error = dbStatus.database === "not_seeded" ? "database_not_seeded" : dbStatus.database === "migration_pending" ? "database_migration_pending" : "database_not_ready";
+    return c.json({ error, ...dbStatus }, 503);
+  }
   const dict = await loadDictionary(c.env.DB);
   const results: ItemResult[] = [];
   for (let i = 0; i < items.length; i++) {
@@ -54,7 +66,8 @@ app.post("/api/v1/ingest", async (c) => {
         index: i,
         external_id: (items[i] as { external_id?: string })?.external_id ?? null,
         status: "rejected",
-        errors: [{ path: "", message: "internal_error" }],
+        // 送信元（認証済みの Muse）が原因を切り分けられるよう、例外の要旨を添える
+        errors: [{ path: "", message: `internal_error: ${String((e as Error)?.message ?? e).slice(0, 300)}` }],
       });
     }
   }
@@ -256,5 +269,14 @@ app.post("/api/v1/admin/reclassify", async (c) => {
 });
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));
+
+// 想定外のエラー。テーブル未作成などの原因が送信側にも分かるように JSON で返す（詳細はログのみ）
+app.onError((err, c) => {
+  console.error("unhandled error", err);
+  if (/no such table/i.test(String(err?.message ?? err))) {
+    return c.json({ error: "database_not_ready", hint: "D1 のマイグレーションが適用されていません" }, 503);
+  }
+  return c.json({ error: "internal_error" }, 500);
+});
 
 export default app;

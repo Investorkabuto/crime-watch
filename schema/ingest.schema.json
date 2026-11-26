@@ -253,7 +253,7 @@
         "suspects": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/person"
+            "$ref": "#/$defs/reportSuspect"
           }
         }
       },
@@ -606,6 +606,52 @@
               ]
             }
           }
+        }
+      }
+    },
+    "reportSuspect": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "報道に出てくる被疑者の属性と認否。氏名・氏名のハッシュは入れない。",
+      "properties": {
+        "person_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Muse が人物ごとに発行するランダムな ID（同じ事件の報道と判決で同じ人物を対応づけるため）。氏名のハッシュそのものは使わない。"
+        },
+        "gender": {
+          "enum": [
+            "male",
+            "female",
+            "unknown"
+          ]
+        },
+        "age": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 120
+        },
+        "age_group": {
+          "type": "string",
+          "pattern": "^(10歳未満|[1-9]0代|100歳以上)$"
+        },
+        "juvenile_class": {
+          "enum": [
+            "juvenile",
+            "specified_juvenile",
+            "adult",
+            "unknown"
+          ]
+        },
+        "plea": {
+          "enum": [
+            "admit",
+            "deny",
+            "partial",
+            "unknown"
+          ],
+          "description": "容疑を認めているか（報道時点）"
         }
       }
     }
