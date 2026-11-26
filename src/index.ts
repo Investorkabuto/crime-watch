@@ -11,6 +11,7 @@ import { addAlias, listFlagged, reclassifyAll, reviewFlag, setCaseStatus } from 
 import { ADMIN_PAGE } from "./admin-page";
 import { PREF_EXPR, prefectureStats, type PrefBasis } from "./prefstats";
 import { nationalityStats } from "./natstats";
+import { recomputeThemes } from "./themes";
 
 // D1 の 1 行あたりの上限（約 2MB）に収まるよう、原本の保存を考えて 1MB までにする
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -134,6 +135,10 @@ app.get("/api/v1/cases", async (c) => {
     where.push("c.progress = ?");
     binds.push(q.progress);
   }
+  if (q.theme) {
+    where.push("EXISTS (SELECT 1 FROM case_themes ct WHERE ct.case_id = c.id AND ct.theme = ?)");
+    binds.push(q.theme);
+  }
   if (q.q) {
     where.push("(c.title LIKE ? OR c.summary LIKE ? OR c.case_ref = ?)");
     binds.push(`%${q.q}%`, `%${q.q}%`, q.q);
@@ -168,12 +173,16 @@ app.get("/api/v1/cases", async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT c.id, c.case_ref, c.title, c.summary, c.occurred_on, c.prefecture,
             c.city, c.is_juvenile, c.latest_stage, c.progress, c.latest_at, c.backfill, c.flagged
-            , c.status
+            , c.status, (SELECT group_concat(DISTINCT ct.theme) FROM case_themes ct WHERE ct.case_id = c.id) AS themes
      FROM cases c ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY c.latest_at DESC LIMIT ? OFFSET ?`,
   )
     .bind(...binds, limit, offset)
     .all();
-  return c.json({ cases: results, limit, offset });
+  return c.json({
+    cases: results.map((r) => ({ ...r, themes: r.themes ? String(r.themes).split(",") : [] })),
+    limit,
+    offset,
+  });
 });
 
 app.get("/api/v1/cases/:id", async (c) => {
@@ -187,6 +196,10 @@ app.get("/api/v1/cases/:id", async (c) => {
     .bind(id, id)
     .first<{ id: string; is_juvenile: number }>();
   if (!kase) return c.json({ error: "not_found" }, 404);
+  const { results: themeRows } = await db
+    .prepare("SELECT theme, source FROM case_themes WHERE case_id = ? ORDER BY theme")
+    .bind(kase.id)
+    .all<{ theme: string; source: string }>();
   const [reports, rcharges, persons, judgments, jcharges, judges, victims] = await db.batch([
     db.prepare(
       `SELECT id, external_id, stage, title, summary, reported_at, occurred_on, prefecture,
@@ -201,7 +214,7 @@ app.get("/api/v1/cases/:id", async (c) => {
     ).bind(kase.id),
     db.prepare(
       `SELECT p.report_id, p.gender, p.age, p.age_group, p.juvenile_class, p.plea, p.occupation,
-              p.nationality, p.nationality_code, p.residence_status
+              p.nationality, p.nationality_code, p.residence_status, p.public_figure
        FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = ?1 ORDER BY p.seq`,
     ).bind(kase.id),
     db.prepare(
@@ -233,7 +246,7 @@ app.get("/api/v1/cases/:id", async (c) => {
   const jc = (jcharges?.results ?? []) as Record<string, unknown>[];
   const jg = (judges?.results ?? []) as Record<string, unknown>[];
   return c.json({
-    case: kase,
+    case: { ...kase, themes: themeRows },
     reports: ((reports?.results ?? []) as Record<string, unknown>[]).map((r) => ({
       ...r,
       charges: by(rc, "report_id", r.id),
@@ -287,6 +300,13 @@ app.get("/api/v1/admin/trial-stats", async (c) => c.json(await trialStats(c.env.
 
 /** 自動チェックのルールを直した後に、保存済みの報道・判決の flags を付け直す */
 app.post("/api/v1/admin/rescan-flags", async (c) => c.json(await rescanFlags(c.env.DB)));
+
+/** テーマのルールを変えた後などに、全事件のテーマを付け直す */
+app.post("/api/v1/admin/recompute-themes", async (c) => {
+  await recomputeThemes(c.env.DB);
+  const r = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM case_themes").first<{ n: number }>();
+  return c.json({ themes: r?.n ?? 0 });
+});
 
 /** 罪状辞書を更新した後に、保存済みの罪状を判定し直す（判決の量刑指標も計算し直す） */
 app.post("/api/v1/admin/reclassify", async (c) => c.json(await reclassifyAll(c.env.DB)));

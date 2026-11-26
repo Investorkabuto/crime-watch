@@ -448,6 +448,57 @@ describe("事件の進み具合", () => {
   });
 });
 
+describe("テーマ", () => {
+  const themesOf = async (ref: string) =>
+    (((await (await view("/api/v1/cases/" + ref)).json()) as Json).case.themes as Json[]).map((t) => `${t.theme}:${t.source}`).sort();
+
+  it("Muse が付けたテーマと、データから自動で判定したテーマを事件にまとめる", async () => {
+    const r = {
+      ...report.items[0],
+      external_id: "th-r",
+      case_ref: "case-th",
+      charges: ["特殊詐欺"],
+      themes: ["闇バイト・トクリュウ"],
+      suspects: [{ person_ref: "th1", gender: "male", age: 29, occupation: "公務員", nationality: "ベトナム国籍" }],
+      victims: [{ gender: "female", age_group: "80代" }],
+    };
+    const j = { ...judgment.items[0], external_id: "th-j", case_ref: "case-th", charges: ["詐欺"], sentence: { type: "拘禁刑", term: "5年" }, demand: { type: "拘禁刑", term: "4年" } };
+    expect(((await (await signedIngest({ items: [r, j] })).json()) as Json).rejected).toBe(0);
+    expect(await themesOf("case-th")).toEqual(
+      ["公務員の犯罪:auto", "外国人犯罪:auto", "求刑超え:auto", "特殊詐欺:auto", "闇バイト・トクリュウ:muse", "高齢者が被害者:auto"].sort(),
+    );
+    const list = (await (await view("/api/v1/cases?theme=" + encodeURIComponent("求刑超え") + "&limit=200")).json()) as Json;
+    const row = list.cases.find((c: Json) => c.case_ref === "case-th");
+    expect(row.themes).toContain("闇バイト・トクリュウ");
+  });
+
+  it("著名人は区分だけを保存してテーマにし、交通の罪の 75 歳以上は高齢ドライバー", async () => {
+    const r = {
+      ...report.items[0],
+      external_id: "th-r2",
+      case_ref: "case-th2",
+      charges: ["過失運転致傷", "酒気帯び運転"],
+      suspects: [{ person_ref: "th2", gender: "male", age: 78, public_figure: "歌舞伎役者" }],
+    };
+    await signedIngest({ items: [r] });
+    expect(await themesOf("case-th2")).toEqual(["著名人:auto", "飲酒運転:auto", "高齢ドライバー:auto"].sort());
+    const d = (await (await view("/api/v1/cases/case-th2")).json()) as Json;
+    expect(d.reports[0].suspects[0].public_figure).toBe("歌舞伎役者");
+  });
+
+  it("一覧にないテーマや著名人の区分は受け付けない", async () => {
+    const r = { ...report.items[0], external_id: "th-bad", case_ref: "case-th-bad", themes: ["炎上"] };
+    expect(((await (await signedIngest({ items: [r] })).json()) as Json).rejected).toBe(1);
+  });
+
+  it("全事件のテーマを付け直せる", async () => {
+    await env.DB.exec("DELETE FROM case_themes");
+    const res = await SELF.fetch("https://cw.test/api/v1/admin/recompute-themes", { method: "POST", headers: { Authorization: "Bearer test-viewer-token" } });
+    expect(((await res.json()) as Json).themes).toBeGreaterThan(0);
+    expect(await themesOf("case-th")).toContain("闇バイト・トクリュウ:muse");
+  });
+});
+
 describe("国籍", () => {
   it("報道の国籍・在留資格を保存し、判決に引き継ぎ、国籍別に人数で集計する（記載なしは日本国籍とみなさない）", async () => {
     const r = {

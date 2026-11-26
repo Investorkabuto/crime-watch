@@ -1,7 +1,7 @@
 // 試行で測る項目（要件 §12.3）
 
 export async function trialStats(db: D1Database) {
-  const [totals, fill, charges, unclassified, byLaw, flags, daily] = await db.batch([
+  const [totals, fill, charges, unclassified, byLaw, flags, daily, themes] = await db.batch([
     db.prepare(
       `SELECT
          (SELECT COUNT(*) FROM cases) AS cases,
@@ -55,6 +55,12 @@ export async function trialStats(db: D1Database) {
               SUM(updated) AS updated, SUM(rejected) AS rejected, SUM(flagged) AS flagged
        FROM ingest_logs GROUP BY day ORDER BY day DESC LIMIT 60`,
     ),
+    db.prepare(
+      `SELECT ct.theme, COUNT(DISTINCT ct.case_id) AS cases,
+              SUM(ct.source = 'auto') AS auto, SUM(ct.source = 'muse') AS muse
+       FROM case_themes ct JOIN cases c ON c.id = ct.case_id WHERE c.status = 'published'
+       GROUP BY ct.theme ORDER BY cases DESC`,
+    ),
   ]);
   const c = (charges?.results?.[0] ?? { total: 0, unclassified: 0 }) as { total: number; unclassified: number };
   return {
@@ -67,5 +73,6 @@ export async function trialStats(db: D1Database) {
     ),
     flagged: flags?.results?.[0] ?? {},
     daily_ingest: daily?.results ?? [],
+    themes: themes?.results ?? [],
   };
 }

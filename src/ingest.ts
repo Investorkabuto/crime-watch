@@ -2,6 +2,7 @@
 import { normalizePoliceAgency, normalizePoliceStation, normalizeProsecutorOffice } from "./agencies";
 import { classifyCharges, type AliasMap, type ClassifiedCharge } from "./classify";
 import { normalizeNationality } from "./nationality";
+import { recomputeThemes } from "./themes";
 import { courtLevel, courtPrefecture, normalizeCourtName } from "./courts";
 import { periodAt, positionInRange, ratioToDemand, severity, type PenaltyPeriod } from "./metrics";
 import { ageToGroup, ageToJuvenileClass, normalizePersonName, nowIso, parseTermMonths } from "./normalize";
@@ -108,6 +109,16 @@ function circumstanceValues(c: Circumstances): (string | number | null)[] {
   return [c?.motive ?? null, c?.weapon ?? null, c?.accomplice_count ?? null, c?.location_type ?? null];
 }
 
+/** Muse が付けたテーマを入れ直す */
+function themeStatements(db: D1Database, parentType: "report" | "judgment", parentId: string, themes: IngestItem["themes"]) {
+  return [
+    db.prepare("DELETE FROM item_themes WHERE parent_type = ? AND parent_id = ?").bind(parentType, parentId),
+    ...[...new Set(themes ?? [])].map((t) =>
+      db.prepare("INSERT INTO item_themes (parent_type, parent_id, theme) VALUES (?, ?, ?)").bind(parentType, parentId, t),
+    ),
+  ];
+}
+
 /** 被害者の粗い属性を入れ直す */
 function victimStatements(db: D1Database, parentType: "report" | "judgment", parentId: string, victims: Victims) {
   return [
@@ -185,6 +196,7 @@ async function upsertReport(
         item.non_prosecution_reason ?? null, id,
       ),
     ...victimStatements(db, "report", id, item.victims),
+    ...themeStatements(db, "report", id, item.themes),
     db.prepare("DELETE FROM report_charges WHERE report_id = ?").bind(id),
     db.prepare("DELETE FROM report_persons WHERE report_id = ?").bind(id),
     ...chargeStatements(db, "report_charges", "report_id", id, charges, null),
@@ -192,7 +204,7 @@ async function upsertReport(
       db
         .prepare(
           `INSERT INTO report_persons (report_id, seq, person_ref, gender, age, age_group, juvenile_class, plea, occupation,
-             nationality, nationality_code, residence_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             nationality, nationality_code, residence_status, public_figure) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id, i, p.person_ref ?? null, p.gender ?? null, p.age ?? null,
@@ -203,6 +215,7 @@ async function upsertReport(
           normalizeNationality(p.nationality)?.name ?? null,
           normalizeNationality(p.nationality)?.code ?? null,
           p.residence_status ?? null,
+          p.public_figure ?? null,
         ),
     ),
   ];
@@ -371,16 +384,18 @@ async function upsertJudgment(
       .prepare(
         `UPDATE judgments SET prefecture = ?, city = ?, police_agency = ?, police_prefecture = ?, prosecutor_office = ?,
            motive = ?, weapon = ?, accomplice_count = ?, location_type = ?, defendant_occupation = ?,
-           defendant_nationality = ?, defendant_nationality_code = ?, defendant_residence_status = ?, nationality_inherited = ?
+           defendant_nationality = ?, defendant_nationality_code = ?, defendant_residence_status = ?, nationality_inherited = ?,
+           defendant_public_figure = ?
          WHERE id = ?`,
       )
       .bind(
         item.prefecture ?? null, item.city ?? null, police?.name ?? null,
         police?.prefecture ?? null, normalizeProsecutorOffice(item.prosecutor_office),
         ...circumstanceValues(item.circumstances), d?.occupation ?? null,
-        nat?.name ?? null, nat?.code ?? null, residence, natInherited, id,
+        nat?.name ?? null, nat?.code ?? null, residence, natInherited, d?.public_figure ?? null, id,
       ),
     ...victimStatements(db, "judgment", id, item.victims),
+    ...themeStatements(db, "judgment", id, item.themes),
     db.prepare("DELETE FROM judgment_charges WHERE judgment_id = ?").bind(id),
     db.prepare("DELETE FROM judgment_judges WHERE judgment_id = ?").bind(id),
     ...chargeStatements(db, "judgment_charges", "judgment_id", id, charges, primaryIdx),
@@ -470,4 +485,5 @@ export async function refreshCase(db: D1Database, caseId: string, now: string): 
       progressOf(latest.stage),
     )
     .run();
+  await recomputeThemes(db, caseId);
 }

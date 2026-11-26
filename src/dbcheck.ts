@@ -8,6 +8,8 @@ export const REQUIRED_COLUMNS: { table: string; column: string; migration: strin
   { table: "flag_reviews", column: "reviewed_flags", migration: "0007_flag_reviews.sql" },
   { table: "report_persons", column: "nationality", migration: "0008_nationality.sql" },
   { table: "cases", column: "progress", migration: "0009_case_progress.sql" },
+  { table: "case_themes", column: "theme", migration: "0010_themes.sql" },
+  { table: "report_persons", column: "public_figure", migration: "0010_themes.sql" },
 ];
 
 export type DbStatus =
