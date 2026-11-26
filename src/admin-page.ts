@@ -213,13 +213,28 @@ a { color: var(--accent); }
       '<div class="panel"><h2>判決の項目ごとの取れた割合（' + esc(f.n ?? 0) + ' 件中）</h2><table><tbody>' +
       fillRows.map(([k, v]) => "<tr><td>" + k + '</td><td class="num" style="width:60px">' + pct(v) + '</td><td style="width:40%"><div class="bar"><i style="width:' + Math.round((v || 0) * 100) + '%"></i></div></td></tr>').join("") +
       "</tbody></table></div>" +
-      '<div class="panel"><h2>罪状の判定</h2><p>罪状 ' + esc(s.charges.total) + " 件のうち、未分類 " + esc(s.charges.unclassified) + " 件（" + pct(s.charges.unclassified_rate) + "）。要確認 " + esc((s.flagged.reports || 0) + (s.flagged.judgments || 0)) + " 件。</p></div>" +
+      '<div class="panel"><h2>罪状の判定</h2><p>罪状 ' + esc(s.charges.total) + " 件のうち、未分類 " + esc(s.charges.unclassified) + " 件（" + pct(s.charges.unclassified_rate) + "）。要確認 " + esc((s.flagged.reports || 0) + (s.flagged.judgments || 0)) + " 件。</p>" +
+      '<p class="muted">法律マスタ・罪状辞書を D1 コンソールで更新したときや、アプリの更新で判定・自動チェックのルールが変わったときは、保存済みのデータに反映させるため、次のボタンを押してください。</p>' +
+      '<div class="row" style="margin:0"><button class="btn" id="btnReclassify">罪状を判定し直す</button><button class="btn" id="btnRescan">自動チェックをやり直す</button><span class="muted" id="maintMsg"></span></div></div>' +
       '<div class="panel"><h2>法律別</h2><table><thead><tr><th>法律</th><th class="num">事件（報道）</th><th class="num">判決</th></tr></thead><tbody>' +
       s.by_law.map((r) => "<tr><td>" + esc(r.name) + '</td><td class="num">' + esc(r.report_cases) + '</td><td class="num">' + esc(r.judgments) + "</td></tr>").join("") +
       "</tbody></table></div>" +
       '<div class="panel"><h2>受信（日ごと）</h2><table><thead><tr><th>日付</th><th class="num">件数</th><th class="num">新規</th><th class="num">更新</th><th class="num">拒否</th><th class="num">要確認</th></tr></thead><tbody>' +
       s.daily_ingest.map((d) => "<tr><td>" + esc(d.day) + '</td><td class="num">' + esc(d.items) + '</td><td class="num">' + esc(d.created) + '</td><td class="num">' + esc(d.updated) + '</td><td class="num">' + esc(d.rejected) + '</td><td class="num">' + esc(d.flagged) + "</td></tr>").join("") +
       "</tbody></table></div>";
+    const run = async (btn, path, label) => {
+      btn.disabled = true;
+      $("#maintMsg").textContent = label + "中…";
+      try {
+        const r = await api(path, { method: "POST" });
+        const L = { changed: "変わった件数", judgments_recomputed: "計算し直した判決", checked: "確認した件数", flagged: "要確認" };
+        $("#maintMsg").textContent = label + "が終わりました（" + Object.entries(r).map(([k, v]) => (L[k] || k) + " " + v).join("、") + "）";
+        refreshBadges();
+      } catch (err) { $("#maintMsg").textContent = label + "に失敗しました：" + (err.message || err); }
+      btn.disabled = false;
+    };
+    $("#btnReclassify").onclick = (e) => run(e.target, "/api/v1/admin/reclassify", "罪状の判定し直し");
+    $("#btnRescan").onclick = (e) => run(e.target, "/api/v1/admin/rescan-flags", "自動チェックのやり直し");
   }
 
   // ===== 事件 =====
