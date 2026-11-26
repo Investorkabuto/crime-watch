@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "type": "judgment",
+      "external_id": "muse-j-20260915-000045",
+      "case_ref": "muse-case-000456",
+      "court": "大阪地裁",
+      "instance": null,
+      "decided_on": "2026-09-15",
+      "reported_at": "2026-09-15T18:20:00+09:00",
+      "link_confidence": "high",
+      "backfill": true,
+      "judges": [{ "name": "山田 太郎", "role": "単独" }],
+      "lay_judge_trial": false,
+      "charges": ["詐欺"],
+      "sentence": { "type": "拘禁刑", "term": "3年", "suspended": "5年", "probation": false },
+      "demand": { "type": "拘禁刑", "term": "4年" },
+      "defendant": { "person_ref": "p-7f3a", "gender": "unknown", "age": 24, "juvenile_class": "adult" },
+      "factors": { "plea": "admit", "damage_yen": 3000000, "victim_count": 1 },
+      "appeal_status": "不明",
+      "is_juvenile": false,
+      "title": "特殊詐欺の受け子に拘禁刑3年・執行猶予5年 大阪地裁",
+      "summary": "大阪地裁は、特殊詐欺の受け子として現金をだまし取った罪に問われた24歳の被告に、拘禁刑3年・執行猶予5年（求刑4年）の判決を言い渡した。",
+      "source_url": "https://example.com/news/789",
+      "source_name": "○○新聞"
+    }
+  ]
+}
