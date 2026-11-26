@@ -3,6 +3,8 @@
 /** 後から追加したマイグレーションで増えた列。新しいマイグレーションで列を足したらここにも足す */
 export const REQUIRED_COLUMNS: { table: string; column: string; migration: string }[] = [
   { table: "report_persons", column: "plea", migration: "0003_report_person_plea.sql" },
+  { table: "reports", column: "police_agency", migration: "0005_more_details.sql" },
+  { table: "judgments", column: "prefecture", migration: "0005_more_details.sql" },
 ];
 
 export type DbStatus =

@@ -30,12 +30,38 @@ const SENTENCE_TYPES = [
 ] as const;
 const DEMAND_TYPES = ["死刑", "無期拘禁刑", "無期懲役", "無期禁錮", "拘禁刑", "懲役", "禁錮", "罰金", "拘留", "科料"] as const;
 
+// 粗い分類（記事に書かれる範囲。分からなければ送らない）
+export const OCCUPATIONS = ["会社員", "会社役員", "公務員", "自営業", "アルバイト・パート", "無職", "学生", "その他", "不明"] as const;
+export const VICTIM_RELATIONS = [
+  "面識なし", "知人", "交際相手・元交際相手", "配偶者・元配偶者", "親族", "職場関係", "客・取引先", "その他", "不明",
+] as const;
+export const MOTIVES = ["金銭", "怨恨", "男女関係", "性的欲求", "生活困窮", "遊興費", "その他", "不明"] as const;
+export const WEAPONS = ["なし", "刃物", "銃器", "鈍器", "車両", "その他", "不明"] as const;
+export const LOCATION_TYPES = [
+  "住宅", "路上", "店舗", "駅・交通機関", "職場", "学校", "公園", "車内", "インターネット", "その他", "不明",
+] as const;
+
+const victim = z.strictObject({
+  gender: z.enum(["male", "female", "unknown"]).optional(),
+  age_group: z.string().regex(/^(10歳未満|[1-9]0代|100歳以上)$/).optional(),
+  occupation: z.enum(OCCUPATIONS).optional(),
+  relation: z.enum(VICTIM_RELATIONS).optional(),
+});
+
+const circumstances = z.strictObject({
+  motive: z.enum(MOTIVES).optional(),
+  weapon: z.enum(WEAPONS).optional(),
+  accomplice_count: z.number().int().min(0).max(100).optional(),
+  location_type: z.enum(LOCATION_TYPES).optional(),
+});
+
 const person = z.strictObject({
   person_ref: z.string().min(1).max(100).optional(),
   gender: z.enum(["male", "female", "unknown"]).optional(),
   age: z.number().int().min(0).max(120).optional(),
   age_group: z.string().regex(/^(10歳未満|[1-9]0代|100歳以上)$/).optional(),
   juvenile_class: z.enum(["juvenile", "specified_juvenile", "adult", "unknown"]).optional(),
+  occupation: z.enum(OCCUPATIONS).optional(),
 });
 
 const common = {
@@ -50,6 +76,8 @@ const common = {
   source_url: url,
   source_name: z.string().optional(),
   additional_sources: z.array(z.strictObject({ url, name: z.string().optional() })).optional(),
+  victims: z.array(victim).max(100).optional(),
+  circumstances: circumstances.optional(),
 };
 
 export const reportSchema = z
@@ -62,11 +90,17 @@ export const reportSchema = z
     occurred_on: date.optional(),
     prefecture: z.enum(PREFECTURES),
     city: z.string().max(50).optional(),
+    police_agency: z.string().max(50).optional(),
+    police_station: z.string().max(50).optional(),
+    prosecutor_office: z.string().max(50).optional(),
     suspects: z.array(person.extend({ plea: z.enum(["admit", "deny", "partial", "unknown"]).optional() })).optional(),
   })
   .superRefine((v, ctx) => {
     if (!v.is_juvenile) return;
     if (v.city !== undefined) ctx.addIssue({ code: "custom", path: ["city"], message: "少年事件では city を送らないでください" });
+    if (v.police_station !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["police_station"], message: "少年事件では警察署名を送らないでください（地域が絞られるため）" });
+    }
     v.suspects?.forEach((s, i) => {
       if (s.age !== undefined) {
         ctx.addIssue({ code: "custom", path: ["suspects", i, "age"], message: "少年事件では正確な年齢を送らないでください" });
@@ -84,6 +118,9 @@ export const judgmentSchema = z
     reported_at: dateTime.optional(),
     occurred_on: date.optional(),
     prefecture: z.enum(PREFECTURES).optional(),
+    city: z.string().max(50).optional(),
+    police_agency: z.string().max(50).optional(),
+    prosecutor_office: z.string().max(50).optional(),
     judges: z
       .array(
         z.strictObject({
@@ -128,6 +165,9 @@ export const judgmentSchema = z
     appeal_status: z.enum(["控訴", "上告", "確定", "不明"]).optional(),
   })
   .superRefine((v, ctx) => {
+    if (v.is_juvenile && v.city !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["city"], message: "少年事件では city を送らないでください" });
+    }
     if (v.is_juvenile && v.defendant?.age !== undefined) {
       ctx.addIssue({ code: "custom", path: ["defendant", "age"], message: "少年事件では正確な年齢を送らないでください" });
     }

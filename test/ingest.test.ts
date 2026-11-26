@@ -232,6 +232,138 @@ describe("自動チェックの付け直し", () => {
   });
 });
 
+describe("場所・捜査機関の保存", () => {
+  it("報道の県警・警察署・検察庁、判決の発生場所を保存し、事件の都道府県は発生場所を優先する", async () => {
+    const r = { ...report.items[0], external_id: "ag-r", case_ref: "case-ag", police_agency: "大阪府警", police_station: "天満警察署", prosecutor_office: "大阪地検" };
+    const j = { ...judgment.items[0], external_id: "ag-j", case_ref: "case-ag", prefecture: "兵庫県", city: "尼崎市", police_agency: "兵庫県警", prosecutor_office: "神戸地検" };
+    await signedIngest({ items: [r, j] });
+    const d = (await (await view("/api/v1/cases/case-ag")).json()) as Json;
+    expect(d.reports[0].police_agency).toBe("大阪府警察");
+    expect(d.reports[0].police_prefecture).toBe("大阪府");
+    expect(d.reports[0].police_station).toBe("天満署");
+    expect(d.reports[0].prosecutor_office).toBe("大阪地方検察庁");
+    expect(d.judgments[0].prefecture).toBe("兵庫県");
+    expect(d.judgments[0].city).toBe("尼崎市");
+    expect(d.judgments[0].police_prefecture).toBe("兵庫県");
+    expect(d.judgments[0].prosecutor_office).toBe("神戸地方検察庁");
+  });
+
+  it("報道がない判決だけの事件では、判決の発生場所を事件の都道府県にする（裁判所の所在地より優先）", async () => {
+    const j = { ...judgment.items[0], external_id: "ag-j2", case_ref: "case-ag2", court: "大阪地裁", prefecture: "奈良県" };
+    await signedIngest({ items: [j] });
+    const d = (await (await view("/api/v1/cases/case-ag2")).json()) as Json;
+    expect(d.case.prefecture).toBe("奈良県");
+    const j3 = { ...judgment.items[0], external_id: "ag-j3", case_ref: "case-ag3", court: "大阪地裁" };
+    await signedIngest({ items: [j3] });
+    const d3 = (await (await view("/api/v1/cases/case-ag3")).json()) as Json;
+    expect(d3.case.prefecture).toBe("大阪府");
+  });
+
+  it("少年事件では警察署名と判決の市区町村を受け付けない", async () => {
+    const { city: _c, suspects: _s, ...base } = report.items[0] as Json;
+    const r = { ...base, external_id: "ag-juv", case_ref: "case-ag-juv", is_juvenile: true, police_station: "天満署" };
+    const { defendant: _d, ...jb } = judgment.items[0] as Json;
+    const j = { ...jb, external_id: "ag-juv-j", case_ref: "case-ag-juv", is_juvenile: true, city: "大阪市" };
+    const res = (await (await signedIngest({ items: [r, j] })).json()) as Json;
+    expect(res.rejected).toBe(2);
+    expect(res.results[0].errors.map((e: Json) => e.path)).toContain("police_station");
+    expect(res.results[1].errors.map((e: Json) => e.path)).toContain("city");
+  });
+});
+
+describe("事件の状況・被害者・職業", () => {
+  it("状況の分類、被害者の粗い属性、職業の区分を保存して返す", async () => {
+    const r = {
+      ...report.items[0],
+      external_id: "cx-r",
+      case_ref: "case-cx",
+      suspects: [{ person_ref: "p-cx", gender: "male", age: 52, occupation: "無職" }],
+      victims: [{ gender: "female", age_group: "70代", relation: "面識なし" }],
+      circumstances: { motive: "金銭", weapon: "なし", accomplice_count: 2, location_type: "住宅" },
+    };
+    const j = {
+      ...judgment.items[0],
+      external_id: "cx-j",
+      case_ref: "case-cx",
+      defendant: { person_ref: "p-cx", gender: "male", age: 52, occupation: "無職" },
+      victims: [{ gender: "female", age_group: "70代", relation: "面識なし" }],
+      circumstances: { motive: "金銭", accomplice_count: 2 },
+    };
+    const res = (await (await signedIngest({ items: [r, j] })).json()) as Json;
+    expect(res.rejected).toBe(0);
+    const d = (await (await view("/api/v1/cases/case-cx")).json()) as Json;
+    expect(d.reports[0].motive).toBe("金銭");
+    expect(d.reports[0].accomplice_count).toBe(2);
+    expect(d.reports[0].location_type).toBe("住宅");
+    expect(d.reports[0].suspects[0].occupation).toBe("無職");
+    expect(d.reports[0].victims).toEqual([{ gender: "female", age_group: "70代", occupation: null, relation: "面識なし" }]);
+    expect(d.judgments[0].defendant_occupation).toBe("無職");
+    expect(d.judgments[0].victims[0].relation).toBe("面識なし");
+  });
+
+  it("被害者の正確な年齢や氏名は受け付けない", async () => {
+    const r = { ...report.items[0], external_id: "cx-bad", case_ref: "case-cx-bad", victims: [{ age: 72, name: "x" }] };
+    const res = (await (await signedIngest({ items: [r] })).json()) as Json;
+    expect(res.rejected).toBe(1);
+  });
+});
+
+describe("管理 API と管理画面", () => {
+  const post = (path: string, body: unknown) =>
+    SELF.fetch(`https://cw.test${path}`, {
+      method: "POST",
+      headers: { Authorization: "Bearer test-viewer-token", "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("事件を非公開にすると一覧から消え、status=all では見える", async () => {
+    const r = { ...report.items[0], external_id: "adm-1", case_ref: "case-adm-1" };
+    await signedIngest({ items: [r] });
+    expect((await post("/api/v1/admin/cases/case-adm-1/status", { status: "hidden" })).status).toBe(200);
+    const pub = (await (await view("/api/v1/cases?limit=200")).json()) as Json;
+    expect(pub.cases.some((c: Json) => c.case_ref === "case-adm-1")).toBe(false);
+    const all = (await (await view("/api/v1/cases?limit=200&status=all")).json()) as Json;
+    expect(all.cases.find((c: Json) => c.case_ref === "case-adm-1").status).toBe("hidden");
+    await post("/api/v1/admin/cases/case-adm-1/status", { status: "published" });
+  });
+
+  it("罪状辞書に言い方を追加すると、保存済みの罪状と判決の量刑指標が計算し直される", async () => {
+    const j = { ...judgment.items[0], external_id: "adm-j", case_ref: "case-adm-j", charges: ["受け子詐欺"] };
+    // 「受け子詐欺」は「詐欺」を含むので判定される。辞書にない罪状で試す
+    const j2 = { ...j, external_id: "adm-j2", case_ref: "case-adm-j2", charges: ["給付金だまし取り"] };
+    await signedIngest({ items: [j2] });
+    let row = await env.DB.prepare("SELECT primary_law_code, position_in_range FROM judgments WHERE external_id = 'adm-j2'").first<Json>();
+    expect(row?.primary_law_code).toBeNull();
+    const res = await post("/api/v1/admin/aliases", { alias: "給付金だまし取り", law_code: "fraud" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Json;
+    expect(body.changed).toBeGreaterThanOrEqual(1);
+    row = await env.DB.prepare("SELECT primary_law_code, position_in_range FROM judgments WHERE external_id = 'adm-j2'").first<Json>();
+    expect(row?.primary_law_code).toBe("fraud");
+    expect(row?.position_in_range).toBeCloseTo(35 / 119, 3);
+  });
+
+  it("存在しない法律コードは追加できない", async () => {
+    expect((await post("/api/v1/admin/aliases", { alias: "なにか", law_code: "nope" })).status).toBe(400);
+  });
+
+  it("要確認の一覧を返す", async () => {
+    const r = { ...report.items[0], external_id: "adm-f", case_ref: "case-adm-f", summary: "山田太郎容疑者を逮捕" };
+    await signedIngest({ items: [r] });
+    const f = (await (await view("/api/v1/admin/flagged")).json()) as Json;
+    expect(f.items.find((x: Json) => x.external_id === "adm-f").flags[0].kind).toBe("person_name");
+  });
+
+  it("管理画面はトークンなしで開けるが、データは含まない", async () => {
+    const res = await SELF.fetch("https://cw.test/admin");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-robots-tag")).toContain("noindex");
+    const html = await res.text();
+    expect(html).toContain("Crime Watch 管理");
+    expect(html).not.toContain("muse-r-");
+  });
+});
+
 describe("閲覧 API（非公開）", () => {
   it("トークンなしでは見られない", async () => {
     const res = await SELF.fetch("https://cw.test/api/v1/cases");

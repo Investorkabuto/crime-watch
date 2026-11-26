@@ -93,3 +93,16 @@ describe("不同意性交等（0004）", () => {
     expect(c?.lawCode).toBe(law);
   });
 });
+
+describe("法律名の中の「及び」", () => {
+  it("麻薬及び向精神薬取締法違反を分けずに判定する", () => {
+    expect(classifyCharges(["麻薬及び向精神薬取締法違反"], aliases).map((c) => c.lawCode)).toEqual(["narcotics"]);
+    expect(classifyCharges(["出入国管理及び難民認定法違反"], aliases).map((c) => c.lawCode)).toEqual(["immigration"]);
+  });
+  it("罪状を並べる「及び」では分ける", () => {
+    expect(classifyCharges(["殺人及び死体遺棄"], aliases).map((c) => c.lawCode)).toEqual(["murder", "corpse"]);
+  });
+  it("逮捕監禁（0005）", () => {
+    expect(classifyCharges(["逮捕監禁"], aliases)[0]?.lawCode).toBe("confinement");
+  });
+});

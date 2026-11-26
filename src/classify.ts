@@ -34,6 +34,8 @@ export function normalizeCharge(s: string): string {
     .replace(/(共謀|共同正犯)/g, "");
 }
 
+const LAW_NAMES_WITH_OYOBI = ["麻薬及び向精神薬取締法", "出入国管理及び難民認定法", "私的独占の禁止及び公正取引の確保に関する法律", "銃砲刀剣類所持等取締法"];
+
 /** 括弧の外にある区切り（・、,，/／）で分割する */
 export function splitCharges(raw: string): string[] {
   const s = raw.normalize("NFKC");
@@ -51,8 +53,9 @@ export function splitCharges(raw: string): string[] {
     buf += ch;
   }
   if (buf.trim()) parts.push(buf.trim());
-  // 「及び」「および」でも分ける
-  return parts.flatMap((p) => p.split(/及び|および/)).filter((p) => p.length > 0);
+  // 「及び」「および」でも分ける。ただし「麻薬及び向精神薬取締法」「出入国管理及び難民認定法」のように
+  // 法律名の一部になっている「及び」では分けない
+  return parts.flatMap((p) => (LAW_NAMES_WITH_OYOBI.some((n) => p.includes(n)) ? [p] : p.split(/及び|および/))).filter((p) => p.length > 0);
 }
 
 function extractModifier(text: string): { text: string; modifier: string | null } {

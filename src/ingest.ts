@@ -1,10 +1,11 @@
 // 受信データの取り込み（要件 F1〜F5, F10）
+import { normalizePoliceAgency, normalizePoliceStation, normalizeProsecutorOffice } from "./agencies";
 import { classifyCharges, type AliasMap, type ClassifiedCharge } from "./classify";
 import { courtLevel, courtPrefecture, normalizeCourtName } from "./courts";
 import { periodAt, positionInRange, ratioToDemand, severity, type PenaltyPeriod } from "./metrics";
 import { ageToGroup, ageToJuvenileClass, normalizePersonName, nowIso, parseTermMonths } from "./normalize";
 import { detectPii, type Flag } from "./pii";
-import { itemSchema, type JudgmentItem, type ReportItem } from "./schema";
+import { itemSchema, type IngestItem, type JudgmentItem, type ReportItem } from "./schema";
 
 /** 被害者の情報を特に慎重に扱う罪（性犯罪） */
 export const SEX_CRIME_LAWS = new Set(["sexual_assault", "sexual_assault_injury", "non_consensual_indecency", "child_porn"]);
@@ -99,6 +100,27 @@ async function upsertCase(
   return row.id;
 }
 
+type Circumstances = IngestItem["circumstances"];
+type Victims = IngestItem["victims"];
+
+function circumstanceValues(c: Circumstances): (string | number | null)[] {
+  return [c?.motive ?? null, c?.weapon ?? null, c?.accomplice_count ?? null, c?.location_type ?? null];
+}
+
+/** 被害者の粗い属性を入れ直す */
+function victimStatements(db: D1Database, parentType: "report" | "judgment", parentId: string, victims: Victims) {
+  return [
+    db.prepare("DELETE FROM victims WHERE parent_type = ? AND parent_id = ?").bind(parentType, parentId),
+    ...(victims ?? []).map((v, i) =>
+      db
+        .prepare(
+          "INSERT INTO victims (parent_type, parent_id, seq, gender, age_group, occupation, relation) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(parentType, parentId, i, v.gender ?? null, v.age_group ?? null, v.occupation ?? null, v.relation ?? null),
+    ),
+  ];
+}
+
 async function existingId(db: D1Database, table: "reports" | "judgments", externalId: string): Promise<string | null> {
   const r = await db.prepare(`SELECT id FROM ${table} WHERE external_id = ?`).bind(externalId).first<{ id: string }>();
   return r?.id ?? null;
@@ -131,6 +153,7 @@ async function upsertReport(
   const found = await existingId(db, "reports", item.external_id);
   const id = found ?? crypto.randomUUID();
   const city = item.is_juvenile ? null : (item.city ?? null);
+  const police = normalizePoliceAgency(item.police_agency);
   const stmts: D1PreparedStatement[] = [
     db
       .prepare(
@@ -149,19 +172,31 @@ async function upsertReport(
         item.prefecture, city, item.link_confidence ?? null, item.backfill ? 1 : 0, item.source_url,
         item.source_name ?? null, json(item.additional_sources), flags.length ? JSON.stringify(flags) : null, now,
       ),
+    db
+      .prepare(
+        `UPDATE reports SET police_agency = ?, police_prefecture = ?, police_station = ?, prosecutor_office = ?,
+           motive = ?, weapon = ?, accomplice_count = ?, location_type = ? WHERE id = ?`,
+      )
+      .bind(
+        police?.name ?? null, police?.prefecture ?? null,
+        item.is_juvenile ? null : normalizePoliceStation(item.police_station),
+        normalizeProsecutorOffice(item.prosecutor_office), ...circumstanceValues(item.circumstances), id,
+      ),
+    ...victimStatements(db, "report", id, item.victims),
     db.prepare("DELETE FROM report_charges WHERE report_id = ?").bind(id),
     db.prepare("DELETE FROM report_persons WHERE report_id = ?").bind(id),
     ...chargeStatements(db, "report_charges", "report_id", id, charges, null),
     ...(item.suspects ?? []).map((p, i) =>
       db
         .prepare(
-          `INSERT INTO report_persons (report_id, seq, person_ref, gender, age, age_group, juvenile_class, plea) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO report_persons (report_id, seq, person_ref, gender, age, age_group, juvenile_class, plea, occupation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id, i, p.person_ref ?? null, p.gender ?? null, item.is_juvenile ? null : (p.age ?? null),
           p.age_group ?? (item.is_juvenile ? null : ageToGroup(p.age)),
           p.juvenile_class ?? ageToJuvenileClass(p.age) ?? (item.is_juvenile ? "juvenile" : null),
           p.plea ?? null,
+          p.occupation ?? null,
         ),
     ),
   ];
@@ -248,6 +283,7 @@ async function upsertJudgment(
     inherited = gender ? 1 : 0;
   }
   const age = item.is_juvenile ? null : (d?.age ?? null);
+  const police = normalizePoliceAgency(item.police_agency);
 
   const stmts: D1PreparedStatement[] = [
     db
@@ -300,6 +336,17 @@ async function upsertJudgment(
         item.source_url, item.source_name ?? null, json(item.additional_sources),
         flags.length ? JSON.stringify(flags) : null, now,
       ),
+    db
+      .prepare(
+        `UPDATE judgments SET prefecture = ?, city = ?, police_agency = ?, police_prefecture = ?, prosecutor_office = ?,
+           motive = ?, weapon = ?, accomplice_count = ?, location_type = ?, defendant_occupation = ? WHERE id = ?`,
+      )
+      .bind(
+        item.prefecture ?? null, item.is_juvenile ? null : (item.city ?? null), police?.name ?? null,
+        police?.prefecture ?? null, normalizeProsecutorOffice(item.prosecutor_office),
+        ...circumstanceValues(item.circumstances), d?.occupation ?? null, id,
+      ),
+    ...victimStatements(db, "judgment", id, item.victims),
     db.prepare("DELETE FROM judgment_charges WHERE judgment_id = ?").bind(id),
     db.prepare("DELETE FROM judgment_judges WHERE judgment_id = ?").bind(id),
     ...chargeStatements(db, "judgment_charges", "judgment_id", id, charges, primaryIdx),
@@ -320,18 +367,18 @@ export async function refreshCase(db: D1Database, caseId: string, now: string): 
        FROM reports r WHERE r.case_id = ?`,
     ).bind(caseId),
     db.prepare(
-      `SELECT j.appeal_status, j.title, j.summary, j.decided_on AS at, j.occurred_on, c.prefecture, j.backfill, j.flags,
+      `SELECT j.appeal_status, j.title, j.summary, j.decided_on AS at, j.occurred_on, j.prefecture, j.city,
+              c.prefecture AS court_prefecture, j.backfill, j.flags,
               CASE WHEN j.juvenile_class IN ('juvenile','specified_juvenile') THEN 1 ELSE 0 END AS juv
        FROM judgments j JOIN courts c ON c.id = j.court_id WHERE j.case_id = ?`,
     ).bind(caseId),
   ]);
-  type Ev = { stage: string; title: string; summary: string; at: string; occurred_on: string | null; prefecture: string | null; city: string | null; backfill: number; flags: string | null; juv: number };
+  type Ev = { stage: string; title: string; summary: string; at: string; occurred_on: string | null; prefecture: string | null; city: string | null; court_prefecture?: string | null; backfill: number; flags: string | null; juv: number };
   const events: Ev[] = [
     ...((reports?.results ?? []) as Ev[]),
-    ...((judgments?.results ?? []) as (Omit<Ev, "stage" | "city"> & { appeal_status: string })[]).map((j) => ({
+    ...((judgments?.results ?? []) as (Omit<Ev, "stage"> & { appeal_status: string })[]).map((j) => ({
       ...j,
       stage: j.appeal_status === "確定" ? "確定" : "判決",
-      city: null,
     })),
   ];
   if (!events.length) return;
@@ -340,7 +387,9 @@ export async function refreshCase(db: D1Database, caseId: string, now: string): 
   events.sort((a, b) => (Date.parse(key(a)) || 0) - (Date.parse(key(b)) || 0));
   const latest = events[events.length - 1]!;
   const occurred = events.map((e) => e.occurred_on).filter((v): v is string => !!v).sort()[0] ?? null;
-  const prefecture = events.find((e) => e.prefecture)?.prefecture ?? null;
+  // 発生場所の都道府県を優先し、どこにもなければ裁判所（地裁・家裁）の所在地で代用する
+  const prefecture =
+    events.find((e) => e.prefecture)?.prefecture ?? events.find((e) => e.court_prefecture)?.court_prefecture ?? null;
   const current = await db.prepare("SELECT is_juvenile FROM cases WHERE id = ?").bind(caseId).first<{ is_juvenile: number }>();
   const juvenile = (current?.is_juvenile ?? 0) === 1 || events.some((e) => e.juv > 0);
   const city = juvenile ? null : (events.find((e) => e.city)?.city ?? null);
