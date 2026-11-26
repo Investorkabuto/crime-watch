@@ -80,11 +80,6 @@ export function detectPii(fields: Record<string, string | undefined | null>, opt
     if (isJuvenile || isSexCrime) {
       for (const m of text.matchAll(SCHOOL_RE)) flags.push({ kind: "school", field, match: m[0] });
     }
-    if (isJuvenile) {
-      for (const m of text.matchAll(/\d{1,2}歳|[(（]\d{1,2}[)）]/g)) {
-        flags.push({ kind: "juvenile_detail", field, match: m[0] });
-      }
-    }
   }
   return flags;
 }

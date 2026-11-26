@@ -153,7 +153,7 @@ async function upsertReport(
 ): Promise<"created" | "updated"> {
   const found = await existingId(db, "reports", item.external_id);
   const id = found ?? crypto.randomUUID();
-  const city = item.is_juvenile ? null : (item.city ?? null);
+  const city = item.city ?? null;
   const police = normalizePoliceAgency(item.police_agency);
   const stmts: D1PreparedStatement[] = [
     db
@@ -180,7 +180,7 @@ async function upsertReport(
       )
       .bind(
         police?.name ?? null, police?.prefecture ?? null,
-        item.is_juvenile ? null : normalizePoliceStation(item.police_station),
+        normalizePoliceStation(item.police_station),
         normalizeProsecutorOffice(item.prosecutor_office), ...circumstanceValues(item.circumstances), id,
       ),
     ...victimStatements(db, "report", id, item.victims),
@@ -194,8 +194,8 @@ async function upsertReport(
              nationality, nationality_code, residence_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
-          id, i, p.person_ref ?? null, p.gender ?? null, item.is_juvenile ? null : (p.age ?? null),
-          p.age_group ?? (item.is_juvenile ? null : ageToGroup(p.age)),
+          id, i, p.person_ref ?? null, p.gender ?? null, p.age ?? null,
+          p.age_group ?? ageToGroup(p.age),
           p.juvenile_class ?? ageToJuvenileClass(p.age) ?? (item.is_juvenile ? "juvenile" : null),
           p.plea ?? null,
           p.occupation ?? null,
@@ -287,7 +287,7 @@ async function upsertJudgment(
     gender = await inheritGender(db, caseId, d?.person_ref);
     inherited = gender ? 1 : 0;
   }
-  const age = item.is_juvenile ? null : (d?.age ?? null);
+  const age = d?.age ?? null;
   const police = normalizePoliceAgency(item.police_agency);
   // 国籍・在留資格は判決報道に書かれないことが多いので、性別と同じく確度の高い逮捕報道から引き継ぐ
   let nat = normalizeNationality(d?.nationality);
@@ -357,7 +357,7 @@ async function upsertJudgment(
         parseTermMonths(s.suspended), bool(s.probation), s.fine_yen ?? null, s.detention_credit_days ?? null,
         s.other ?? null, s.protective_disposition ?? null, item.demand?.type ?? null, demandMonths,
         item.demand?.fine_yen ?? null, item.appeal_status ?? "不明", d?.person_ref ?? null, gender ?? (d?.gender ?? null),
-        inherited, age, d?.age_group ?? (item.is_juvenile ? null : ageToGroup(age)),
+        inherited, age, d?.age_group ?? ageToGroup(age),
         d?.juvenile_class ?? ageToJuvenileClass(age) ?? (item.is_juvenile ? "juvenile" : null),
         item.factors?.prior_record ?? null, item.factors?.plea ?? null, item.factors?.settlement ?? null,
         item.factors?.damage_yen ?? null, item.factors?.victim_count ?? null, item.factors?.harm_result ?? null,
@@ -374,7 +374,7 @@ async function upsertJudgment(
          WHERE id = ?`,
       )
       .bind(
-        item.prefecture ?? null, item.is_juvenile ? null : (item.city ?? null), police?.name ?? null,
+        item.prefecture ?? null, item.city ?? null, police?.name ?? null,
         police?.prefecture ?? null, normalizeProsecutorOffice(item.prosecutor_office),
         ...circumstanceValues(item.circumstances), d?.occupation ?? null,
         nat?.name ?? null, nat?.code ?? null, residence, natInherited, id,
@@ -427,7 +427,7 @@ export async function refreshCase(db: D1Database, caseId: string, now: string): 
     events.find((e) => e.prefecture)?.prefecture ?? events.find((e) => e.court_prefecture)?.court_prefecture ?? null;
   const current = await db.prepare("SELECT is_juvenile FROM cases WHERE id = ?").bind(caseId).first<{ is_juvenile: number }>();
   const juvenile = (current?.is_juvenile ?? 0) === 1 || events.some((e) => e.juv > 0);
-  const city = juvenile ? null : (events.find((e) => e.city)?.city ?? null);
+  const city = events.find((e) => e.city)?.city ?? null;
   await db
     .prepare(
       `UPDATE cases SET title = ?2, summary = ?3, latest_stage = ?4, latest_at = ?5, occurred_on = ?6, prefecture = ?7,

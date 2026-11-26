@@ -68,10 +68,9 @@ describe("自動チェック", () => {
   it("属性の表記は人名として扱わない", () => {
     expect(detectPii({ summary: "無職の男容疑者と会社員の女性被告" }, false)).toEqual([]);
   });
-  it("少年事件では学校名や年齢も検出する", () => {
+  it("少年事件では学校名を検出し、年齢は検出しない（v0.17 で年齢は公開する方針に変更）", () => {
     const kinds = detectPii({ summary: "市内の○○中学校に通う少年（15）" }, true).map((x) => x.kind);
-    expect(kinds).toContain("school");
-    expect(kinds).toContain("juvenile_detail");
+    expect(kinds).toEqual(["school"]);
   });
 });
 

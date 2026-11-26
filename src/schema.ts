@@ -98,18 +98,6 @@ export const reportSchema = z
     police_station: z.string().max(50).optional(),
     prosecutor_office: z.string().max(50).optional(),
     suspects: z.array(person.extend({ plea: z.enum(["admit", "deny", "partial", "unknown"]).optional() })).optional(),
-  })
-  .superRefine((v, ctx) => {
-    if (!v.is_juvenile) return;
-    if (v.city !== undefined) ctx.addIssue({ code: "custom", path: ["city"], message: "少年事件では city を送らないでください" });
-    if (v.police_station !== undefined) {
-      ctx.addIssue({ code: "custom", path: ["police_station"], message: "少年事件では警察署名を送らないでください（地域が絞られるため）" });
-    }
-    v.suspects?.forEach((s, i) => {
-      if (s.age !== undefined) {
-        ctx.addIssue({ code: "custom", path: ["suspects", i, "age"], message: "少年事件では正確な年齢を送らないでください" });
-      }
-    });
   });
 
 export const judgmentSchema = z
@@ -167,14 +155,6 @@ export const judgmentSchema = z
       })
       .optional(),
     appeal_status: z.enum(["控訴", "上告", "確定", "不明"]).optional(),
-  })
-  .superRefine((v, ctx) => {
-    if (v.is_juvenile && v.city !== undefined) {
-      ctx.addIssue({ code: "custom", path: ["city"], message: "少年事件では city を送らないでください" });
-    }
-    if (v.is_juvenile && v.defendant?.age !== undefined) {
-      ctx.addIssue({ code: "custom", path: ["defendant", "age"], message: "少年事件では正確な年齢を送らないでください" });
-    }
   });
 
 export const itemSchema = z.discriminatedUnion("type", [reportSchema, judgmentSchema]);
