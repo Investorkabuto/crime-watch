@@ -1,7 +1,7 @@
 // 自動チェック（要件 §9-8）。公開は止めず、検出内容を flags として記録し管理者が事後に確認する。
 
 export interface Flag {
-  kind: "person_name" | "phone" | "street_address" | "school" | "juvenile_detail";
+  kind: "person_name" | "phone" | "street_address" | "school" | "juvenile_detail" | "victim_age" | "victim_relation";
   field: string;
   match: string;
 }
@@ -31,15 +31,34 @@ function scanNames(field: string, text: string, flags: Flag[]): void {
 }
 
 /** title・summary などの文章を検査する */
-export function detectPii(fields: Record<string, string | undefined | null>, isJuvenile: boolean): Flag[] {
+/** 性犯罪で、被告人との関係から被害者が分かってしまう表現 */
+const VICTIM_RELATION_RE = /(実の|義理の)?(娘|長女|次女|三女|孫娘|孫|姪|養女|継娘|連れ子|妹|教え子|生徒|児童|部下|患者|利用者)/g;
+// 「10代の女性」のような年代は許容し、「16歳」「（16）」のような正確な年齢を検出する
+const EXACT_AGE_RE = /\d{1,3}歳|[(（]\d{1,3}[)）]/g;
+
+export interface PiiOptions {
+  isJuvenile: boolean;
+  /** 性犯罪の罪状を含むか（被害者を特定できる情報をより厳しく検出する） */
+  isSexCrime?: boolean;
+}
+
+export function detectPii(fields: Record<string, string | undefined | null>, opts: boolean | PiiOptions): Flag[] {
+  const { isJuvenile, isSexCrime = false } = typeof opts === "boolean" ? { isJuvenile: opts } : opts;
   const flags: Flag[] = [];
   for (const [field, text] of Object.entries(fields)) {
     if (!text) continue;
     scanNames(field, text, flags);
     for (const m of text.matchAll(PHONE_RE)) flags.push({ kind: "phone", field, match: m[0] });
     for (const m of text.matchAll(STREET_RE)) flags.push({ kind: "street_address", field, match: m[0] });
-    if (isJuvenile) {
+    if (isSexCrime) {
+      // 性犯罪では、被告人の年齢表記も被害者の年齢表記と区別できないため、正確な年齢はすべて検出する
+      for (const m of text.matchAll(EXACT_AGE_RE)) flags.push({ kind: "victim_age", field, match: m[0] });
+      for (const m of text.matchAll(VICTIM_RELATION_RE)) flags.push({ kind: "victim_relation", field, match: m[0] });
+    }
+    if (isJuvenile || isSexCrime) {
       for (const m of text.matchAll(SCHOOL_RE)) flags.push({ kind: "school", field, match: m[0] });
+    }
+    if (isJuvenile) {
       for (const m of text.matchAll(/\d{1,2}歳|[(（]\d{1,2}[)）]/g)) {
         flags.push({ kind: "juvenile_detail", field, match: m[0] });
       }

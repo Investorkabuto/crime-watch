@@ -89,6 +89,28 @@ describe("取り込み", () => {
     expect(j).not.toHaveProperty("person_ref");
   });
 
+  it("不同意性交等は行為時点の法定刑で計算し、被害者の情報を検出する", async () => {
+    const item = {
+      ...judgment.items[0],
+      external_id: "sa-1",
+      case_ref: "case-sa-1",
+      charges: ["強制性交等"],
+      occurred_on: "2020-05-01",
+      sentence: { type: "懲役", term: "6年" },
+      demand: { type: "懲役", term: "8年" },
+      title: "強制性交等の罪で懲役6年",
+      summary: "知人の女性（19）に対する強制性交等の罪で、懲役6年の判決。",
+    };
+    const res = (await (await signedIngest({ items: [item] })).json()) as Json;
+    expect(res.created).toBe(1);
+    expect(res.flagged).toBe(1);
+    const row = await env.DB.prepare("SELECT primary_law_code, position_in_range, ratio_to_demand FROM judgments WHERE external_id = 'sa-1'").first<Json>();
+    expect(row?.primary_law_code).toBe("sexual_assault");
+    // 2020 年の行為なので強制性交等罪（5年以上）: (72-60)/(240-60)
+    expect(row?.position_in_range).toBeCloseTo(12 / 180, 3);
+    expect(row?.ratio_to_demand).toBe(0.75);
+  });
+
   it("報道の被疑者ごとの認否を保存する", async () => {
     const item = {
       ...report.items[0],

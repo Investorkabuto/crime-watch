@@ -6,6 +6,9 @@ import { ageToGroup, ageToJuvenileClass, normalizePersonName, nowIso, parseTermM
 import { detectPii, type Flag } from "./pii";
 import { itemSchema, type JudgmentItem, type ReportItem } from "./schema";
 
+/** 被害者の情報を特に慎重に扱う罪（性犯罪） */
+const SEX_CRIME_LAWS = new Set(["sexual_assault", "sexual_assault_injury", "non_consensual_indecency", "child_porn"]);
+
 export interface ItemResult {
   index: number;
   external_id: string | null;
@@ -52,7 +55,8 @@ export async function ingestItem(db: D1Database, dict: Dictionary, raw: unknown,
   }
   const item = parsed.data;
   const charges = classifyCharges(item.charges, dict.aliases);
-  const flags = detectPii({ title: item.title, summary: item.summary }, item.is_juvenile);
+  const isSexCrime = charges.some((c) => c.lawCode !== null && SEX_CRIME_LAWS.has(c.lawCode));
+  const flags = detectPii({ title: item.title, summary: item.summary }, { isJuvenile: item.is_juvenile, isSexCrime });
   const now = nowIso();
 
   const caseId = await upsertCase(db, item.case_ref, item.title, item.summary, item.is_juvenile, now);
