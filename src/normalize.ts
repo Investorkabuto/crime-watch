@@ -43,3 +43,12 @@ export function ageToJuvenileClass(age: number | null | undefined): string | nul
 export function nowIso(): string {
   return new Date().toISOString();
 }
+
+/** 不正な % エンコードで例外を投げない decodeURIComponent（失敗時は null） */
+export function safeDecodeURIComponent(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}

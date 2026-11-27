@@ -1,6 +1,7 @@
 // RSS 2.0 フィード（全体・テーマ別・事件別）と sitemap.xml / robots.txt
 import type { Context } from "hono";
 import type { Env } from "./env";
+import { safeDecodeURIComponent } from "./normalize";
 import { PREFECTURES } from "./schema";
 import { THEMES } from "./themes";
 import { formatSentence } from "./site/format";
@@ -83,8 +84,8 @@ export async function handleMainFeed(c: Context<{ Bindings: Env }>) {
 
 /** テーマ別 RSS /themes/:theme/feed.xml */
 export async function handleThemeFeed(c: Context<{ Bindings: Env }>) {
-  const theme = decodeURIComponent(c.req.param("theme") ?? "");
-  if (!(THEMES as readonly string[]).includes(theme)) return c.text("Not Found", 404);
+  const theme = safeDecodeURIComponent(c.req.param("theme") ?? "");
+  if (!theme || !(THEMES as readonly string[]).includes(theme)) return c.text("Not Found", 404);
   const origin = new URL(c.req.url).origin;
 
   const { results } = await c.env.DB.prepare(

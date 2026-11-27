@@ -27,5 +27,6 @@
   // 秘密情報（wrangler secret put で設定。リポジトリには書かない）:
   //   INGEST_TOKEN  : Muse が Authorization: Bearer に付けるトークン
   //   INGEST_HMAC_SECRET : 署名用の鍵
-  //   VIEWER_TOKEN  : 非公開期間中の閲覧用トークン
+  //   ADMIN_TOKEN   : 管理 API（/api/v1/admin/*）用のトークン（公開状態に関係なく常に必須）
+  //   VIEWER_TOKEN  : 非公開期間中のプレビュー閲覧用トークン（任意。未設定時は ADMIN_TOKEN で閲覧可）
 }

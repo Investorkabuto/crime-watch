@@ -9,6 +9,7 @@ declare global {
       INGEST_TOKEN?: string;
       INGEST_HMAC_SECRET?: string;
       VIEWER_TOKEN?: string;
+      ADMIN_TOKEN?: string;
       TEST_MIGRATIONS: D1Migration[];
     }
   }

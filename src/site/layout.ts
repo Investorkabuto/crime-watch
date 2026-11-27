@@ -151,7 +151,7 @@ a:hover { text-decoration: underline; }
   padding: 7px 12px; border-radius: var(--radius-pill);
   border: 1px solid var(--line-strong);
   background: var(--surface); color: var(--text-sub);
-  font: 13px/1 inherit; font-weight: 600; cursor: pointer;
+  font-size: 13px; line-height: 1; font-family: inherit; font-weight: 600; cursor: pointer;
   transition: border-color 0.16s, background 0.16s, box-shadow 0.16s, transform 0.16s;
 }
 .search-trigger:hover {
@@ -264,7 +264,7 @@ body.search-open .search-drawer { transform: translateY(0); }
   padding: 8px 14px; border-radius: var(--radius-pill);
   border: 1px solid var(--accent-border);
   background: var(--accent-soft); color: var(--accent);
-  font: 13.5px/1.2 inherit; font-weight: 600; cursor: pointer;
+  font-size: 13.5px; line-height: 1.2; font-family: inherit; font-weight: 600; cursor: pointer;
   transition: background 0.16s, box-shadow 0.16s, transform 0.16s;
 }
 .filter-bar-btn:hover { box-shadow: var(--accent-glow); transform: translateY(-1px); }
@@ -381,7 +381,7 @@ a.kpi-card:hover {
 }
 .segmented a, .segmented button {
   border: 0; background: transparent; color: var(--muted);
-  padding: 6px 14px; border-radius: 999px; font: 13px/1.2 inherit; font-weight: 600;
+  padding: 6px 14px; border-radius: 999px; font-size: 13px; line-height: 1.2; font-family: inherit; font-weight: 600;
   cursor: pointer; text-decoration: none; white-space: nowrap;
   transition: background 0.16s, color 0.16s;
 }
@@ -605,7 +605,7 @@ dl.kv dd { margin: 0; color: var(--text); }
 /* Forms & buttons — 16px font-size prevents iOS Safari auto-zoom on focus */
 .filter-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .input, select.input, textarea.input {
-  font: 16px/1.4 inherit; padding: 8px 11px; border: 1px solid var(--line-strong);
+  font-size: 16px; line-height: 1.4; font-family: inherit; padding: 8px 11px; border: 1px solid var(--line-strong);
   border-radius: 12px; background: var(--surface-solid); color: var(--text); max-width: 100%;
   min-height: 40px;
 }
@@ -614,7 +614,7 @@ dl.kv dd { margin: 0; color: var(--text); }
 }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  font: 13.5px/1.3 inherit; font-weight: 600; padding: 9px 15px;
+  font-size: 13.5px; line-height: 1.3; font-family: inherit; font-weight: 600; padding: 9px 15px;
   border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface-solid);
   color: var(--text); cursor: pointer; text-decoration: none;
   transition: background 0.15s, border-color 0.15s, transform 0.15s;
@@ -658,7 +658,9 @@ dl.kv dd { margin: 0; color: var(--text); }
   .quick-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
-  .header-inner { gap: 8px; padding: 10px 14px; }
+  .header-inner { flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
+  .nav { order: 3; flex-basis: 100%; margin: 0 -4px; }
+  .nav a { padding: 5px 10px; font-size: 13px; }
   .brand { font-size: 16.5px; }
   .search-trigger { padding: 7px 11px; }
   .search-trigger .kbd { display: none; }
@@ -773,6 +775,14 @@ function renderDefaultDrawerBody(searchQuery: string | undefined) {
   `;
 }
 
+const NAV_ITEMS: readonly { key: NavKey; href: string; label: string }[] = [
+  { key: "cases", href: "/cases", label: "事件一覧" },
+  { key: "themes", href: "/themes", label: "テーマ" },
+  { key: "laws", href: "/laws", label: "法律" },
+  { key: "prefectures", href: "/prefectures", label: "都道府県" },
+  { key: "stats", href: "/stats", label: "統計" },
+];
+
 export function renderLayout(opts: LayoutOptions) {
   const origin = opts.origin ?? "";
   const canonicalUrl = opts.canonicalPath ? `${origin}${opts.canonicalPath}` : undefined;
@@ -810,6 +820,13 @@ export function renderLayout(opts: LayoutOptions) {
         <header class="site-header">
           <div class="header-inner">
             <a class="brand" href="/"><span class="brand-dot" aria-hidden="true"></span>HANZAI Watch</a>
+            <nav class="nav" aria-label="主要ナビゲーション">
+              ${NAV_ITEMS.map((item) =>
+                opts.activeNav === item.key
+                  ? html`<a href="${item.href}" class="active" aria-current="page">${item.label}</a>`
+                  : html`<a href="${item.href}">${item.label}</a>`,
+              )}
+            </nav>
             <button type="button" class="search-trigger" data-open-search aria-label="検索・絞り込みを開く">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>

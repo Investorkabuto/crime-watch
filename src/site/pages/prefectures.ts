@@ -2,6 +2,7 @@
 import type { Context } from "hono";
 import { html, raw } from "hono/html";
 import type { Env } from "../../env";
+import { safeDecodeURIComponent } from "../../normalize";
 import { PREF_EXPR, prefectureStats } from "../../prefstats";
 import { PREFECTURES } from "../../schema";
 import { formatDateShort, formatPct, stageBadgeClass } from "../format";
@@ -32,7 +33,7 @@ const PREF_MAP_CSS = `
 }
 .segmented a, .segmented button {
   border: 0; background: transparent; color: var(--muted);
-  padding: 6px 12px; border-radius: 999px; font: 12.5px/1.2 inherit; font-weight: 600;
+  padding: 6px 12px; border-radius: 999px; font-size: 12.5px; line-height: 1.2; font-family: inherit; font-weight: 600;
   cursor: pointer; text-decoration: none; white-space: nowrap;
   transition: background 0.16s, color 0.16s;
 }
@@ -50,7 +51,7 @@ const PREF_MAP_CSS = `
 .region-pill {
   flex-shrink: 0; border: 1px solid var(--line); background: var(--surface-subtle);
   color: var(--text-sub); padding: 5px 12px; border-radius: 999px;
-  font: 12.5px/1.3 inherit; font-weight: 600; cursor: pointer;
+  font-size: 12.5px; line-height: 1.3; font-family: inherit; font-weight: 600; cursor: pointer;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 .region-pill:hover { border-color: var(--accent-border); color: var(--accent); }
@@ -142,7 +143,7 @@ const PREF_MAP_CSS = `
   background: var(--drawer-bg);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--line-strong);
-  color: var(--text); font: 12.5px/1.2 inherit; font-weight: 600;
+  color: var(--text); font-size: 12.5px; line-height: 1.2; font-family: inherit; font-weight: 600;
   cursor: pointer; box-shadow: var(--shadow-card);
   opacity: 0; pointer-events: none; transform: translateY(-6px);
   transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.15s;
@@ -558,10 +559,10 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
 
 /** 都道府県別ページ /prefectures/:name */
 export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) {
-  const name = decodeURIComponent(c.req.param("name") ?? "");
+  const name = safeDecodeURIComponent(c.req.param("name") ?? "");
   const origin = new URL(c.req.url).origin;
 
-  if (!PREF_SET.has(name)) {
+  if (!name || !PREF_SET.has(name)) {
     return c.html(
       renderLayout({
         title: "都道府県が見つかりません｜HANZAI Watch",
