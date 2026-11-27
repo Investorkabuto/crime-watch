@@ -123,5 +123,26 @@ export async function nationalityStats(db: D1Database, q: NatStatsQuery) {
   const total = rows.reduce((n, r) => n + r.people, 0);
   const stated = rows.filter((r) => r.stated).reduce((n, r) => n + r.people, 0);
   const foreign = rows.filter((r) => r.stated && r.code !== "JP").reduce((n, r) => n + r.people, 0);
-  return { from: q.from ?? null, to: q.to ?? null, law: q.law ?? null, prefecture: q.prefecture ?? null, total_people: total, stated_people: stated, foreign_people: foreign, nationalities: rows };
+
+  // 在留資格別の全体内訳（記載ありのみ。不明・null は除外）
+  const resTotals = new Map<string, number>();
+  for (const r of (byRes?.results ?? []) as (R & { residence: string | null; people: number })[]) {
+    if (!r.residence || r.residence === "不明") continue;
+    resTotals.set(r.residence, (resTotals.get(r.residence) ?? 0) + r.people);
+  }
+  const residence_breakdown = [...resTotals.entries()]
+    .map(([status, people]) => ({ status, group: residenceGroup(status), people }))
+    .sort((a, b) => b.people - a.people || a.status.localeCompare(b.status, "ja"));
+
+  return {
+    from: q.from ?? null,
+    to: q.to ?? null,
+    law: q.law ?? null,
+    prefecture: q.prefecture ?? null,
+    total_people: total,
+    stated_people: stated,
+    foreign_people: foreign,
+    nationalities: rows,
+    residence_breakdown,
+  };
 }

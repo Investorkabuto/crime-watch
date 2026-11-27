@@ -268,7 +268,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
           <span class="kpi-arrow" aria-hidden="true">→</span>
         </div>
         <div>
-          <div class="quick-title">犯罪別</div>
+          <div class="quick-title">テーマ別</div>
           <div class="quick-desc">詐欺・交通・判決など切り口別</div>
         </div>
       </a>

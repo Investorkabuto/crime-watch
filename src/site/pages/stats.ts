@@ -394,11 +394,25 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
                 return html`<a class="nat-row" href="${casesHref({ nationality: r.nationality })}" role="listitem">
                   <span class="nat-label">${r.nationality}</span>
                   <span class="nat-track" title="来日外国人 ${r.residence["来日外国人"]}人 / 定着居住者 ${r.residence["定着居住者"]}人 / 不明 ${r.residence["不明"]}人">
-                    ${visPct > 0 ? html`<span class="nat-seg" style="width:${visPct}%;background:var(--accent)"></span>` : ""}
-                    ${resPct > 0 ? html`<span class="nat-seg" style="width:${resPct}%;background:#38bdf8"></span>` : ""}
-                    ${unkPct > 0 ? html`<span class="nat-seg" style="width:${unkPct}%;background:var(--muted)"></span>` : ""}
+                    ${visPct > 0
+                      ? html`<span class="nat-seg" style="width:${visPct}%;background:var(--accent)"
+                          >${visPct >= 10 ? r.residence["来日外国人"] : ""}</span
+                        >`
+                      : ""}
+                    ${resPct > 0
+                      ? html`<span class="nat-seg" style="width:${resPct}%;background:#38bdf8"
+                          >${resPct >= 10 ? r.residence["定着居住者"] : ""}</span
+                        >`
+                      : ""}
+                    ${unkPct > 0
+                      ? html`<span class="nat-seg" style="width:${unkPct}%;background:var(--muted)"
+                          >${unkPct >= 10 ? r.residence["不明"] : ""}</span
+                        >`
+                      : ""}
                   </span>
-                  <span class="nat-count num">${r.people.toLocaleString("ja-JP")}人</span>
+                  <span class="nat-count num"
+                    >${r.people.toLocaleString("ja-JP")}人<span class="nat-chev" aria-hidden="true">›</span></span
+                  >
                 </a>`;
               })}
             </div>
@@ -408,6 +422,41 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
               <span class="chart-legend-item"><span class="chart-dot" style="background:var(--muted)"></span>在留資格不明</span>
             </div>`
         : html`<p class="muted small mb-0">国籍の記載があるデータはまだありません。</p>`}
+
+      <hr class="divider" />
+      <h3 class="card-title" style="font-size:15px">
+        <span>在留資格別の分布</span>
+        <span class="small muted">タップで事件一覧へ</span>
+      </h3>
+      ${(() => {
+        const resRows = natData.residence_breakdown;
+        if (!resRows.length) {
+          return html`<p class="muted small mb-0">在留資格の記載があるデータはまだありません。</p>`;
+        }
+        const maxRes = Math.max(1, ...resRows.map((r) => r.people));
+        const totalRes = resRows.reduce((acc, r) => acc + r.people, 0);
+        return html`<div class="nat-list" role="list" aria-label="在留資格別の分布グラフ">
+          ${resRows.map((r) => {
+            const w = Math.max(6, (r.people / maxRes) * 100);
+            const share = totalRes > 0 ? Math.round((r.people / totalRes) * 100) : 0;
+            const col =
+              r.group === "定着居住者" ? "#38bdf8" : r.group === "来日外国人" ? "var(--accent)" : "var(--muted)";
+            return html`<a
+              class="nat-row"
+              href="${casesHref({ residence_status: r.status })}"
+              role="listitem"
+            >
+              <span class="nat-label">${r.status}</span>
+              <span class="nat-track" title="${r.status}: ${r.people}人（全体の ${share}%）">
+                <span class="nat-seg" style="width:${w}%;background:${col}">${w >= 18 ? `${share}%` : ""}</span>
+              </span>
+              <span class="nat-count num"
+                >${r.people.toLocaleString("ja-JP")}人<span class="nat-chev" aria-hidden="true">›</span></span
+              >
+            </a>`;
+          })}
+        </div>`;
+      })()}
     </section>
 
     <!-- タブ 4: 都道府県×法律 -->

@@ -187,9 +187,13 @@ describe("公開サイト（S1 + S2）", () => {
     const lawDetail = await view("/laws/robbery_injury");
     expect(lawDetail.status).toBe(200);
     const lawDetailHtml = await lawDetail.text();
-    expect(lawDetailHtml).toContain("件数 20 件未満のため非表示");
-    expect(lawDetailHtml).toContain("わかりやすい要約");
+    expect(lawDetailHtml).toContain("20件未満非表示");
+    expect(lawDetailHtml).not.toContain("e-Gov");
+    expect(lawDetailHtml).not.toContain("根拠条文:");
     expect(lawDetailHtml).toContain("刑法 第240条前段");
+    expect(lawDetailHtml).toContain("属性別の量刑傾向");
+    expect(lawDetailHtml).toContain('data-demo-tab="gender"');
+    expect(lawDetailHtml).toContain('data-demo-tab="age"');
 
     const prefsRes = await view("/prefectures");
     expect(prefsRes.status).toBe(200);
@@ -286,6 +290,53 @@ describe("公開サイト（S1 + S2）", () => {
     const themeHtml = await (await view(`/themes/${encodeURIComponent("強盗")}`)).text();
     const matches = themeHtml.match(/強盗致傷事件で被告に拘禁刑9年の判決/g) ?? [];
     expect(matches.length).toBe(1);
+    expect(themeHtml).toContain("bento-kpi-2");
+    expect(themeHtml).toContain("hbar-list");
+    expect(themeHtml).toContain("ratio-bar");
+    expect(themeHtml).not.toContain("このテーマの RSS");
+
+    // 外国人犯罪テーマに在留資格つきの事件を追加し、国籍別＆在留資格別の分布グラフと絞り込みを確認
+    const fRes = await signedIngest({
+      items: [
+        {
+          type: "report",
+          external_id: "site-test-r-foreign",
+          case_ref: "site-test-case-foreign",
+          stage: "逮捕",
+          title: "技能実習生による不法残留・窃盗事件",
+          summary: "技能実習生として来日した男が窃盗容疑で逮捕された。",
+          charges: ["窃盗"],
+          is_juvenile: false,
+          occurred_on: "2026-04-10",
+          reported_at: "2026-04-11T10:00:00+09:00",
+          prefecture: "愛知県",
+          themes: ["外国人犯罪"],
+          suspects: [
+            {
+              person_ref: "p-site-foreign-1",
+              gender: "male",
+              age: 26,
+              nationality: "ベトナム",
+              residence_status: "技能実習",
+            },
+          ],
+          source_url: "https://example.com/news/site-foreign-1",
+          source_name: "テスト新聞",
+        },
+      ],
+    });
+    expect(fRes.status).toBe(200);
+
+    const foreignThemeHtml = await (await view(`/themes/${encodeURIComponent("外国人犯罪")}`)).text();
+    expect(foreignThemeHtml).toContain("国籍別の人数");
+    expect(foreignThemeHtml).toContain("在留資格別の分布");
+    expect(foreignThemeHtml).toContain("技能実習");
+    expect(foreignThemeHtml).toContain(`/cases?theme=${encodeURIComponent("外国人犯罪")}&residence_status=${encodeURIComponent("技能実習")}`);
+    expect(foreignThemeHtml).toContain("タップで事件一覧へ");
+
+    const resCasesHtml = await (await view(`/cases?residence_status=${encodeURIComponent("技能実習")}`)).text();
+    expect(resCasesHtml).toContain("技能実習生による不法残留・窃盗事件");
+    expect(resCasesHtml).toContain("在留資格: 技能実習");
 
     const themeRss = await (await view(`/themes/${encodeURIComponent("強盗")}/feed.xml`)).text();
     const rssMatches = themeRss.match(/強盗致傷事件で被告に拘禁刑9年の判決/g) ?? [];
@@ -298,13 +349,13 @@ describe("公開サイト（S1 + S2）", () => {
     expect(themesListHtml).toContain("compact-grid");
     expect(aboutHtml).not.toMatch(/muse/i);
 
-    // TOP: HANZAI Watch・最上部グラフ・外国人犯罪タイル・犯罪別/統計・バー付きテーマ・ダブルタップズーム防止
+    // TOP: HANZAI Watch・最上部グラフ・外国人犯罪タイル・テーマ別/統計・バー付きテーマ・ダブルタップズーム防止
     const homeHtml = await (await view("/")).text();
     expect(homeHtml).toContain("HANZAI Watch");
     expect(homeHtml).toContain("touch-action: manipulation");
     expect(homeHtml).not.toContain("累計事件数");
     expect(homeHtml).not.toContain("法律の分類（上位）");
-    expect(homeHtml).toContain("犯罪別");
+    expect(homeHtml).toContain("テーマ別");
     expect(homeHtml).not.toContain("統計・CSV");
     expect(homeHtml).toContain("bar-grid");
     expect(homeHtml).toContain("直近 1 年の犯罪・判決件数推移");
@@ -329,16 +380,17 @@ describe("公開サイト（S1 + S2）", () => {
     const lawDetailHtml = await (await view("/laws/robbery_injury")).text();
     expect(lawDetailHtml).toContain('class="article-details"');
     expect(lawDetailHtml).toContain("条文全文を見る");
-    expect(lawDetailHtml).toContain("量刑の分布（法定刑の範囲内");
+    expect(lawDetailHtml).toContain("量刑の分布（1件）");
     expect(lawDetailHtml).toContain("法定刑の範囲内における量刑分布グラフ");
 
-    // 都道府県ページにリアル日本地図 SVG と地域ズーム・地図外ドック・テーブル併用があること
+    // 都道府県ページにリアル日本地図 SVG と地域ズーム・地図外ドック・コンパクト2列カードグリッドがあること
     const prefsHtml = await (await view("/prefectures")).text();
     expect(prefsHtml).toContain('id="cw-japan-svg"');
     expect(prefsHtml).toContain('id="cw-map-dock"');
     expect(prefsHtml).not.toContain('id="cw-map-popover"');
     expect(prefsHtml).toContain("九州・沖縄");
-    expect(prefsHtml).toContain('id="cw-pref-tbody"');
+    expect(prefsHtml).toContain('id="cw-pref-grid"');
+    expect(prefsHtml).toContain('id="cw-pref-more"');
 
     // 都道府県詳細ページの法律・テーマ・市区町村リンクが都道府県で絞り込んだ /cases に飛ぶこと
     const prefDetailHtml = await (await view(`/prefectures/${encodeURIComponent("東京都")}`)).text();
@@ -362,6 +414,8 @@ describe("公開サイト（S1 + S2）", () => {
     expect(statsHtml).toContain("ratio-bar");
     expect(statsHtml).toContain(`/cases?age_group=${encodeURIComponent("20代")}&amp;gender=male`);
     expect(statsHtml).toContain(`/cases?occupation=${encodeURIComponent("無職")}`);
+    expect(statsHtml).toContain("在留資格別の分布");
+    expect(statsHtml).toContain(`/cases?residence_status=${encodeURIComponent("技能実習")}`);
 
     // /cases の性別・年代・職業フィルタが動作すること
     const attrCasesHtml = await (await view(`/cases?gender=male&age_group=${encodeURIComponent("20代")}&occupation=${encodeURIComponent("無職")}`)).text();
