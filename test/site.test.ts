@@ -135,7 +135,7 @@ describe("公開サイト（S1 + S2）", () => {
     const authed = await SELF.fetch("https://cw.test/", { headers: { Cookie: cookiePair } });
     expect(authed.status).toBe(200);
     const homeHtml = await authed.text();
-    expect(homeHtml).toContain("Crime Watch");
+    expect(homeHtml).toContain("HANZAI Watch");
     expect(homeHtml).toContain("最近動きのあった事件");
     expect(homeHtml).toContain("強盗致傷事件で被告に拘禁刑9年の判決");
   });
@@ -179,21 +179,28 @@ describe("公開サイト（S1 + S2）", () => {
 
     const lawsRes = await view("/laws");
     expect(lawsRes.status).toBe(200);
-    expect(await lawsRes.text()).toContain("強盗致傷");
+    const lawsHtml = await lawsRes.text();
+    expect(lawsHtml).toContain("強盗致傷");
+    expect(lawsHtml).toContain("data-law-tab=");
 
     const lawDetail = await view("/laws/robbery_injury");
     expect(lawDetail.status).toBe(200);
-    expect(await lawDetail.text()).toContain("件数 20 件未満のため非表示");
+    const lawDetailHtml = await lawDetail.text();
+    expect(lawDetailHtml).toContain("件数 20 件未満のため非表示");
+    expect(lawDetailHtml).toContain("わかりやすい要約");
+    expect(lawDetailHtml).toContain("刑法 第240条前段");
 
     const prefsRes = await view("/prefectures");
     expect(prefsRes.status).toBe(200);
     const prefsHtml = await prefsRes.text();
     expect(prefsHtml).toContain("人口10万人あたり");
-    expect(prefsHtml).toContain("総務省統計局");
+    expect(prefsHtml).not.toContain("捜査警察ベース");
 
     const prefDetail = await view(`/prefectures/${encodeURIComponent("東京都")}`);
     expect(prefDetail.status).toBe(200);
-    expect(await prefDetail.text()).toContain("東京都の事件・判決");
+    const prefDetailText = await prefDetail.text();
+    expect(prefDetailText).toContain("東京都の事件・判決");
+    expect(prefDetailText).not.toContain("捜査警察ベース");
 
     const statsRes = await view("/stats");
     expect(statsRes.status).toBe(200);
@@ -206,7 +213,10 @@ describe("公開サイト（S1 + S2）", () => {
   });
 
   it("/about・/about/metrics・/contact が動作し、削除依頼でも事件は自動非公開にならない", async () => {
-    expect((await view("/about")).status).toBe(200);
+    const aboutRes = await view("/about");
+    expect(aboutRes.status).toBe(200);
+    const aboutHtml = await aboutRes.text();
+    expect(aboutHtml).toContain("総務省統計局");
     expect((await view("/about/metrics")).status).toBe(200);
     expect((await view(`/contact?case=${caseId}`)).status).toBe(200);
 
@@ -266,7 +276,7 @@ describe("公開サイト（S1 + S2）", () => {
     expect(ogRes.headers.get("Content-Type")).toContain("image/svg+xml");
   });
 
-  it("テーマ重複修正・Muse削除・TOP累計削除・日本地図・統一スライドダウン検索窓が反映されている", async () => {
+  it("テーマ重複修正・Muse削除・HANZAI Watch改名・グラフ・日本地図・統一検索窓・ヘッダー簡素化が反映されている", async () => {
     // 同じ事件・同じテーマに auto と muse の両方が存在する状態を作る（強盗は自動付与される）
     await env.DB.prepare("INSERT OR IGNORE INTO case_themes (case_id, theme, source) VALUES (?, '強盗', 'muse')")
       .bind(caseId)
@@ -284,13 +294,19 @@ describe("公開サイト（S1 + S2）", () => {
     const themesListHtml = await (await view("/themes")).text();
     const aboutHtml = await (await view("/about")).text();
     expect(themesListHtml).not.toMatch(/muse/i);
+    expect(themesListHtml).toContain("compact-grid");
     expect(aboutHtml).not.toMatch(/muse/i);
 
-    // TOP に累計事件数がなく、ダッシュボードリンクと統一検索ドロワーがあること
+    // TOP: HANZAI Watch・積み上げ棒グラフ・AI注意帯削除・ナビ削除・フッター整理
     const homeHtml = await (await view("/")).text();
+    expect(homeHtml).toContain("HANZAI Watch");
     expect(homeHtml).not.toContain("累計事件数");
+    expect(homeHtml).toContain("直近 1 年の犯罪・判決件数推移");
     expect(homeHtml).toContain("都道府県マップ");
     expect(homeHtml).toContain('id="cw-search-drawer"');
+    expect(homeHtml).not.toContain('class="ai-notice"');
+    expect(homeHtml).not.toContain('aria-label="メインナビゲーション"');
+    expect(homeHtml).not.toContain('href="/about/metrics"');
 
     // 都道府県ページにリアル日本地図 SVG と地域ズーム・地図外ドック・テーブル併用があること
     const prefsHtml = await (await view("/prefectures")).text();
@@ -302,19 +318,19 @@ describe("公開サイト（S1 + S2）", () => {
 
     // 都道府県詳細ページの法律・テーマ・市区町村リンクが都道府県で絞り込んだ /cases に飛ぶこと
     const prefDetailHtml = await (await view(`/prefectures/${encodeURIComponent("東京都")}`)).text();
-    expect(prefDetailHtml).toContain(`/cases?prefecture=${encodeURIComponent("東京都")}&pref_basis=occurrence&law=robbery_injury`);
-    expect(prefDetailHtml).toContain(`/cases?prefecture=${encodeURIComponent("東京都")}&pref_basis=occurrence&theme=${encodeURIComponent("闇バイト・トクリュウ")}`);
-    expect(prefDetailHtml).toContain(`/cases?prefecture=${encodeURIComponent("東京都")}&pref_basis=occurrence&city=${encodeURIComponent("江東区")}`);
+    expect(prefDetailHtml).toContain(`/cases?prefecture=${encodeURIComponent("東京都")}&law=robbery_injury`);
+    expect(prefDetailHtml).toContain(`/cases?prefecture=${encodeURIComponent("東京都")}&theme=${encodeURIComponent("闇バイト・トクリュウ")}`);
+    expect(prefDetailHtml).toContain(`/cases?prefecture=${encodeURIComponent("東京都")}&city=${encodeURIComponent("江東区")}`);
 
     const cityCasesHtml = await (await view(`/cases?prefecture=${encodeURIComponent("東京都")}&city=${encodeURIComponent("江東区")}`)).text();
     expect(cityCasesHtml).toContain("強盗致傷事件で被告に拘禁刑9年の判決");
 
-    // 事件一覧・統計で統一検索ドロワーが採用されていること
+    // 事件一覧・統計で重複するページ内検索ボタンがなく、統一検索ドロワーが使われていること
     const casesHtml = await (await view("/cases")).text();
     expect(casesHtml).toContain('id="cw-search-drawer"');
-    expect(casesHtml).toContain("検索・詳細絞り込み");
+    expect(casesHtml).not.toContain('class="filter-bar-btn"');
     const statsHtml = await (await view("/stats")).text();
     expect(statsHtml).toContain('id="cw-search-drawer"');
-    expect(statsHtml).toContain("集計条件を絞り込む");
+    expect(statsHtml).not.toContain('class="filter-bar-btn"');
   });
 });

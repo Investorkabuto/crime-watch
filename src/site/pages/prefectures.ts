@@ -2,23 +2,14 @@
 import type { Context } from "hono";
 import { html, raw } from "hono/html";
 import type { Env } from "../../env";
-import { PREF_EXPR, prefectureStats, type PrefBasis } from "../../prefstats";
+import { PREF_EXPR, prefectureStats } from "../../prefstats";
 import { PREFECTURES } from "../../schema";
 import { formatDateShort, formatPct } from "../format";
 import { JAPAN_VIEWBOX, MAP_INSET_LINES, MAP_PREFECTURES, MAP_REGIONS, type RegionId } from "../japan-map-data";
 import { renderLayout } from "../layout";
-import { per100k, POPULATION_SOURCE_LABEL, POPULATION_SOURCE_URL } from "../population";
+import { per100k } from "../population";
 
 const PREF_SET = new Set<string>([...PREFECTURES, "不明"]);
-const BASIS_LABELS: Record<PrefBasis, string> = {
-  occurrence: "発生地ベース",
-  police: "捜査警察ベース",
-  court: "裁判所ベース",
-};
-
-function parseBasis(rawBasis: string | undefined): PrefBasis {
-  return rawBasis && rawBasis in PREF_EXPR ? (rawBasis as PrefBasis) : "occurrence";
-}
 
 function heatLevel(cases: number, maxCases: number): number {
   if (cases <= 0 || maxCases <= 0) return 0;
@@ -247,8 +238,7 @@ tr.is-region-hidden { display: none; }
 export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
   const db = c.env.DB;
   const origin = new URL(c.req.url).origin;
-  const basis = parseBasis(c.req.query("basis"));
-  const stats = await prefectureStats(db, { basis });
+  const stats = await prefectureStats(db, { basis: "occurrence" });
 
   const statByName = new Map(stats.prefectures.map((r) => [r.prefecture, r]));
   const regionByName = new Map<string, RegionId>(MAP_PREFECTURES.map((p) => [p.name, p.region]));
@@ -264,7 +254,7 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
       cases,
       judgments: row?.judgments ?? 0,
       rate: rate != null ? rate.toFixed(2) : "—",
-      href: `/prefectures/${encodeURIComponent(p.name)}?basis=${basis}`,
+      href: `/prefectures/${encodeURIComponent(p.name)}`,
     };
   });
 
@@ -420,17 +410,12 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
       ${raw(PREF_MAP_CSS)}
     </style>
 
-    <h1 class="page-h1">都道府県別一覧</h1>
-    <p class="page-lead">
-      日本地図から地方をタップして拡大表示できるほか、下部の表から 47 都道府県の詳細を比較できます（合計
-      <strong class="num">${stats.total_cases.toLocaleString("ja-JP")}</strong> 件）。
-    </p>
-
     <div class="pref-controls">
-      <div class="segmented" role="tablist" aria-label="集計の基準">
-        ${(["occurrence", "police", "court"] as PrefBasis[]).map(
-          (b) => html`<a class="${basis === b ? "is-active" : ""}" href="/prefectures?basis=${b}">${BASIS_LABELS[b]}</a>`,
-        )}
+      <div>
+        <h1 class="page-h1" style="margin-bottom:2px">都道府県別一覧</h1>
+        <p class="small muted mb-0">
+          合計 <strong class="num">${stats.total_cases.toLocaleString("ja-JP")}</strong> 件（発生地別）
+        </p>
       </div>
       <div class="segmented" role="group" aria-label="表示切替">
         <button type="button" class="is-active" data-view-mode="both">地図 + 一覧</button>
@@ -520,12 +505,6 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
         <span id="cw-table-region-label">都道府県別データ（全国）</span>
         <a id="cw-table-reset" class="small is-hidden-view" href="#">全国をすべて表示</a>
       </h2>
-      <div class="note-box" style="margin-bottom:14px">
-        件数は収集した報道・判決にもとづくものであり、警察庁の認知件数ではありません。
-        人口 10 万人あたり件数は
-        <a href="${POPULATION_SOURCE_URL}" target="_blank" rel="noopener noreferrer">${POPULATION_SOURCE_LABEL}</a>
-        にもとづいて算出しています。
-      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -543,7 +522,7 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
               const reg = regionByName.get(r.prefecture) ?? "unknown";
               return html`<tr data-region="${reg}">
                 <td>
-                  <a href="/prefectures/${encodeURIComponent(r.prefecture)}?basis=${basis}" style="font-weight:600"
+                  <a href="/prefectures/${encodeURIComponent(r.prefecture)}" style="font-weight:600"
                     >${r.prefecture}</a
                   >
                 </td>
@@ -567,7 +546,7 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
 
   return c.html(
     renderLayout({
-      title: "都道府県別一覧｜Crime Watch",
+      title: "都道府県別一覧｜HANZAI Watch",
       description: "47 都道府県ごとの犯罪報道・判決件数と人口 10 万人あたり件数を日本地図と一覧で確認できます。",
       activeNav: "prefectures",
       canonicalPath: "/prefectures",
@@ -585,7 +564,7 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
   if (!PREF_SET.has(name)) {
     return c.html(
       renderLayout({
-        title: "都道府県が見つかりません｜Crime Watch",
+        title: "都道府県が見つかりません｜HANZAI Watch",
         activeNav: "prefectures",
         origin,
         noindex: true,
@@ -599,8 +578,7 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
   }
 
   const db = c.env.DB;
-  const basis = parseBasis(c.req.query("basis"));
-  const prefCond = name === "不明" ? `${PREF_EXPR[basis]} IS NULL` : `${PREF_EXPR[basis]} = ?`;
+  const prefCond = name === "不明" ? `${PREF_EXPR.occurrence} IS NULL` : `${PREF_EXPR.occurrence} = ?`;
   const binds = name === "不明" ? [] : [name];
 
   const [countRes, lawsRes, themesRes, citiesRes, casesRes] = await db.batch([
@@ -667,29 +645,15 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
   const canonicalPath = `/prefectures/${encodeURIComponent(name)}`;
 
   const body = html`
-    <section class="card">
-      <div class="pills" style="margin-bottom:8px">
-        <a class="pill" href="/prefectures?basis=${basis}">都道府県一覧</a>
-        ${(["occurrence", "police", "court"] as PrefBasis[]).map(
-          (b) => html`<a
-            class="pill ${basis === b ? "pill-accent" : ""}"
-            href="${canonicalPath}?basis=${b}"
-            >${BASIS_LABELS[b]}</a
-          >`,
-        )}
-      </div>
-      <h1 class="page-h1">${name}の事件・判決</h1>
-      <p class="small muted mb-0">
-        報道された事件にもとづく集計です。人口 10 万人あたり件数は
-        <a href="${POPULATION_SOURCE_URL}" target="_blank" rel="noopener noreferrer">${POPULATION_SOURCE_LABEL}</a>
-        にもとづいて算出しています。
-      </p>
-    </section>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">
+      <h1 class="page-h1 mb-0">${name}の事件・判決</h1>
+      <a class="pill" href="/prefectures">← 地図に戻る</a>
+    </div>
 
-    <section class="bento-kpi mt-16">
-      <a class="kpi-card" href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}">
+    <section class="bento-kpi">
+      <a class="kpi-card" href="/cases?prefecture=${encodeURIComponent(name)}">
         <div class="kpi-head">
-          <span class="kpi-label">事件数（${BASIS_LABELS[basis]}）</span>
+          <span class="kpi-label">事件数</span>
           <span class="kpi-arrow" aria-hidden="true">→</span>
         </div>
         <div class="kpi-value num">${counts.cases.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
@@ -698,7 +662,7 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
         <div class="kpi-label">人口 10 万人あたり</div>
         <div class="kpi-value num">${rate != null ? rate.toFixed(2) : "—"}<span class="kpi-unit">${rate != null ? "件" : ""}</span></div>
       </div>
-      <a class="kpi-card" href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}&has_judgment=1">
+      <a class="kpi-card" href="/cases?prefecture=${encodeURIComponent(name)}&has_judgment=1">
         <div class="kpi-head">
           <span class="kpi-label">うち判決あり</span>
           <span class="kpi-arrow" aria-hidden="true">→</span>
@@ -715,7 +679,7 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
               ${laws.map(
                 (l) => html`<a
                   class="pill"
-                  href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}&law=${encodeURIComponent(l.code)}"
+                  href="/cases?prefecture=${encodeURIComponent(name)}&law=${encodeURIComponent(l.code)}"
                   >${l.name}<span class="pill-count">${l.cases}</span></a
                 >`,
               )}
@@ -729,7 +693,7 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
               ${themes.map(
                 (t) => html`<a
                   class="pill"
-                  href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}&theme=${encodeURIComponent(t.theme)}"
+                  href="/cases?prefecture=${encodeURIComponent(name)}&theme=${encodeURIComponent(t.theme)}"
                   >${t.theme}<span class="pill-count">${t.cases}</span></a
                 >`,
               )}
@@ -745,7 +709,7 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
             ${cities.map(
               (ct) => html`<a
                 class="pill"
-                href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}&city=${encodeURIComponent(ct.city)}"
+                href="/cases?prefecture=${encodeURIComponent(name)}&city=${encodeURIComponent(ct.city)}"
                 >${ct.city}<span class="pill-count">${ct.cases}</span></a
               >`,
             )}
@@ -756,7 +720,7 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
     <section class="card mt-16">
       <h2 class="card-title">
         <span>最近の事件</span>
-        <a class="small" href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}">すべて見る →</a>
+        <a class="small" href="/cases?prefecture=${encodeURIComponent(name)}">すべて見る →</a>
       </h2>
       ${cases.length
         ? html`<ul class="feed">
@@ -777,8 +741,8 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
 
   return c.html(
     renderLayout({
-      title: `${name}の事件・判決（${counts.cases}件）｜Crime Watch`,
-      description: `${name}で報道された事件・判決の集計と一覧（${BASIS_LABELS[basis]}）。`,
+      title: `${name}の事件・判決（${counts.cases}件）｜HANZAI Watch`,
+      description: `${name}で発生・報道された事件・判決の集計と一覧。`,
       activeNav: "prefectures",
       canonicalPath,
       origin,

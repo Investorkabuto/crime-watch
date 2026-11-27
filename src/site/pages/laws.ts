@@ -1,9 +1,10 @@
 // 法律一覧（/laws）と 法律別ページ（/laws/:code）
 import type { Context } from "hono";
-import { html } from "hono/html";
+import { html, raw } from "hono/html";
 import type { Env } from "../../env";
 import { formatMonths } from "../../normalize";
 import { ci95, formatDateJa, formatDateShort, formatGender, formatPct } from "../format";
+import { LAW_TEXTS } from "../law-texts";
 import { renderLayout } from "../layout";
 import { renderMonthlyBarChart } from "../svg";
 
@@ -13,6 +14,7 @@ const MIN_METRIC_N = 20;
 export async function renderLawsListPage(c: Context<{ Bindings: Env }>) {
   const db = c.env.DB;
   const origin = new URL(c.req.url).origin;
+  const activeCat = c.req.query("category") === "特別法犯" ? "特別法犯" : "刑法犯";
 
   const [lawsRes, periodsRes, countsRes] = await db.batch([
     db.prepare("SELECT code, name, law_name, category, group_name, sort_order FROM laws ORDER BY sort_order"),
@@ -45,60 +47,75 @@ export async function renderLawsListPage(c: Context<{ Bindings: Env }>) {
     ((countsRes?.results ?? []) as { law_code: string; cases: number }[]).map((r) => [r.law_code, r.cases]),
   );
 
-  const categories = ["刑法犯", "特別法犯"];
+  const categories = ["刑法犯", "特別法犯"] as const;
+  const tabScript = `
+(() => {
+  const btns = document.querySelectorAll("[data-law-tab]");
+  const panels = document.querySelectorAll("[data-law-panel]");
+  btns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.lawTab;
+      btns.forEach((b) => b.classList.toggle("is-active", b === btn));
+      panels.forEach((p) => { p.style.display = p.dataset.lawPanel === target ? "" : "none"; });
+    });
+  });
+})();
+`;
 
   const body = html`
     <h1 class="page-h1">法律一覧</h1>
     <p class="page-lead">
-      罪状から自動分類された法律ごとに、法定刑・事件数・量刑の分布を確認できます。
+      罪状ごとに条文・わかりやすい要約・法定刑・事件数を確認できます。
     </p>
+
+    <div style="margin-bottom:14px">
+      <div class="segmented" role="tablist" aria-label="法律の区分">
+        ${categories.map((cat) => {
+          const catCount = laws.filter((l) => l.category === cat).length;
+          return html`<button
+            type="button"
+            class="${activeCat === cat ? "is-active" : ""}"
+            data-law-tab="${cat}"
+          >${cat}（${catCount}）</button>`;
+        })}
+      </div>
+    </div>
 
     ${categories.map((cat) => {
       const catLaws = laws.filter((l) => l.category === cat);
       const groups = [...new Set(catLaws.map((l) => l.group_name))];
-      return html`<section class="card">
-        <h2 class="card-title">${cat}</h2>
+      return html`<div data-law-panel="${cat}" style="${activeCat === cat ? "" : "display:none"}">
         ${groups.map((grp) => {
           const items = catLaws.filter((l) => l.group_name === grp);
-          return html`<div style="margin-bottom:16px">
-            <div class="small muted" style="font-weight:700;margin-bottom:8px">${grp}</div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>罪名</th>
-                    <th>条文</th>
-                    <th class="hide-sm">現行法定刑</th>
-                    <th class="num">事件数</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${items.map((l) => {
-                    const p = periodMap.get(l.code);
-                    const n = countMap.get(l.code) ?? 0;
-                    return html`<tr>
-                      <td><a href="/laws/${encodeURIComponent(l.code)}" style="font-weight:600">${l.name}</a></td>
-                      <td class="small muted">${l.law_name}</td>
-                      <td class="small muted hide-sm">
-                        ${p ? p.statutory_penalty : "—"}
-                        ${p && p.verified === 0 ? html` <span class="pill">確認中</span>` : ""}
-                      </td>
-                      <td class="num">${n.toLocaleString("ja-JP")}</td>
-                    </tr>`;
-                  })}
-                </tbody>
-              </table>
+          return html`<section class="card">
+            <h2 class="card-title">${grp}</h2>
+            <div class="compact-grid">
+              ${items.map((l) => {
+                const p = periodMap.get(l.code);
+                const n = countMap.get(l.code) ?? 0;
+                return html`<a class="compact-card" href="/laws/${encodeURIComponent(l.code)}">
+                  <div class="compact-card-head">
+                    <span class="compact-card-title">${l.name}</span>
+                    <span class="compact-card-count num">${n}<span class="small muted">件</span></span>
+                  </div>
+                  <div class="compact-card-desc">${l.law_name}${p ? ` · ${p.statutory_penalty}` : ""}</div>
+                </a>`;
+              })}
             </div>
-          </div>`;
+          </section>`;
         })}
-      </section>`;
+      </div>`;
     })}
+
+    <script>
+      ${raw(tabScript)}
+    </script>
   `;
 
   return c.html(
     renderLayout({
-      title: "法律一覧｜Crime Watch",
-      description: "刑法犯・特別法犯の法律ごとの法定刑、事件数、量刑分布を一覧できます。",
+      title: "法律一覧｜HANZAI Watch",
+      description: "刑法犯・特別法犯の法律ごとの条文・要約・法定刑・事件数を一覧できます。",
       activeNav: "laws",
       canonicalPath: "/laws",
       origin,
@@ -121,7 +138,7 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
   if (!law) {
     return c.html(
       renderLayout({
-        title: "法律が見つかりません｜Crime Watch",
+        title: "法律が見つかりません｜HANZAI Watch",
         activeNav: "laws",
         origin,
         noindex: true,
@@ -264,6 +281,7 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
   const chart = renderMonthlyBarChart(monthly.slice(-12));
   const egovSearchUrl = `https://laws.e-gov.go.jp/search/elawsSearch/elaws_search/lsg0500/search?lawTitle=${encodeURIComponent(law.law_name.replace(/[0-9０-９条]+.*$/, ""))}`;
   const canonicalPath = `/laws/${encodeURIComponent(law.code)}`;
+  const lawText = LAW_TEXTS[law.code];
 
   const body = html`
     <section class="card">
@@ -275,8 +293,20 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
       <h1 class="page-h1">${law.name}</h1>
       <p class="page-lead mb-0">
         根拠条文: ${law.law_name} ／
-        <a href="${egovSearchUrl}" target="_blank" rel="noopener noreferrer">e-Gov 法令検索で条文を見る</a>
+        <a href="${egovSearchUrl}" target="_blank" rel="noopener noreferrer">e-Gov 法令検索で見る</a>
       </p>
+
+      ${lawText
+        ? html`<hr class="divider" />
+            <div style="margin-bottom:12px">
+              <div class="small muted" style="font-weight:700;margin-bottom:4px">わかりやすい要約</div>
+              <p style="margin:0;color:var(--text);font-size:14.5px;line-height:1.7">${lawText.summary}</p>
+            </div>
+            <div class="note-box" style="color:var(--text-sub);line-height:1.75">
+              <div class="small muted" style="font-weight:700;margin-bottom:6px">${lawText.articleTitle}</div>
+              <div style="white-space:pre-line;font-size:13px">${lawText.articleText}</div>
+            </div>`
+        : ""}
 
       ${periods.length
         ? html`<hr class="divider" />
@@ -446,8 +476,8 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
 
   return c.html(
     renderLayout({
-      title: `${law.name}（${law.law_name}）｜Crime Watch`,
-      description: `${law.name}の法定刑、報道された事件数（${totalCases}件）、判決の量刑分布データ。`,
+      title: `${law.name}（${law.law_name}）｜HANZAI Watch`,
+      description: `${law.name}の条文・要約・法定刑、報道された事件数（${totalCases}件）、判決の量刑分布データ。`,
       activeNav: "laws",
       canonicalPath,
       origin,

@@ -347,6 +347,48 @@ a.kpi-card:hover {
 .bento-2col { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; align-items: start; }
 .bento-equal { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; align-items: start; }
 .bento-3col { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.compact-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.compact-card {
+  display: flex; flex-direction: column; justify-content: space-between; gap: 6px;
+  padding: 12px 14px; border-radius: 14px;
+  background: var(--surface-subtle); border: 1px solid var(--line);
+  color: inherit; text-decoration: none;
+  transition: border-color 0.16s, background 0.16s, transform 0.16s;
+}
+.compact-card:hover {
+  text-decoration: none; border-color: var(--accent-border);
+  background: var(--surface-solid); transform: translateY(-1px);
+}
+.compact-card-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 6px;
+}
+.compact-card-title { font-size: 14px; font-weight: 700; line-height: 1.35; }
+.compact-card-count { font-size: 16px; font-weight: 800; white-space: nowrap; }
+.compact-card-desc {
+  font-size: 11.5px; color: var(--muted); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.chart-legend {
+  display: inline-flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); font-weight: 500;
+}
+.chart-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.chart-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.segmented {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px; border-radius: 999px;
+  background: var(--surface-subtle); border: 1px solid var(--line);
+}
+.segmented a, .segmented button {
+  border: 0; background: transparent; color: var(--muted);
+  padding: 6px 14px; border-radius: 999px; font: 13px/1.2 inherit; font-weight: 600;
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: background 0.16s, color 0.16s;
+}
+.segmented a:hover, .segmented button:hover { color: var(--text); text-decoration: none; }
+.segmented .is-active {
+  background: var(--accent); color: #fff;
+  box-shadow: 0 2px 8px rgba(59, 91, 219, 0.28);
+}
 
 /* Tags & pills */
 .pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -495,17 +537,14 @@ dl.kv dd { margin: 0; color: var(--text); }
 /* Responsive (mobile-first 360px+) */
 @media (max-width: 820px) {
   .bento-2col, .bento-equal { grid-template-columns: 1fr; }
-  .bento-3col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bento-3col, .compact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .quick-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
-  .header-inner { gap: 8px; padding: 8px 12px; }
-  .brand { font-size: 16px; }
-  .nav a { padding: 5px 9px; font-size: 13px; }
-  .search-trigger { padding: 7px 10px; }
-  .search-trigger .search-trigger-label, .search-trigger .kbd { display: none; }
-  .ai-notice { padding: 0 12px; }
-  .ai-notice-text { white-space: nowrap; }
+  .header-inner { gap: 8px; padding: 10px 14px; }
+  .brand { font-size: 16.5px; }
+  .search-trigger { padding: 7px 11px; }
+  .search-trigger .kbd { display: none; }
   .container { padding: 14px 12px 36px; }
   .card { padding: 16px; border-radius: 16px; }
   .bento-kpi { grid-template-columns: 1fr; gap: 8px; }
@@ -517,6 +556,10 @@ dl.kv dd { margin: 0; color: var(--text); }
   .quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .quick-tile { padding: 12px 13px; gap: 6px; }
   .bento-3col { grid-template-columns: 1fr; }
+  .compact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .compact-card { padding: 10px 11px; gap: 4px; }
+  .compact-card-title { font-size: 13px; }
+  .compact-card-count { font-size: 14.5px; }
   .page-h1 { font-size: 20px; }
   .hide-sm { display: none; }
   .drawer-grid { grid-template-columns: 1fr 1fr; }
@@ -608,11 +651,7 @@ export function renderLayout(opts: LayoutOptions) {
   const canonicalUrl = opts.canonicalPath ? `${origin}${opts.canonicalPath}` : undefined;
   const ogImageUrl = `${origin}${opts.ogImagePath ?? "/og/default.svg"}`;
   const desc = opts.description ?? "日本国内の犯罪報道と判決（量刑・裁判所・担当裁判官）を事実のみに基づいて記録・公開するデータアーカイブ。";
-  const nav = opts.activeNav ?? "none";
   const filterCount = opts.activeFilterCount ?? 0;
-
-  const navLink = (key: NavKey, href: string, label: string) =>
-    html`<a href="${href}" class="${nav === key ? "active" : ""}">${label}</a>`;
 
   return html`<!doctype html>
     <html lang="ja">
@@ -623,14 +662,14 @@ export function renderLayout(opts: LayoutOptions) {
         <meta name="description" content="${desc}" />
         ${opts.noindex ? html`<meta name="robots" content="noindex, nofollow" />` : ""}
         ${canonicalUrl ? html`<link rel="canonical" href="${canonicalUrl}" />` : ""}
-        <meta property="og:site_name" content="Crime Watch" />
+        <meta property="og:site_name" content="HANZAI Watch" />
         <meta property="og:title" content="${opts.title}" />
         <meta property="og:description" content="${desc}" />
         <meta property="og:type" content="${opts.ogType ?? "website"}" />
         ${canonicalUrl ? html`<meta property="og:url" content="${canonicalUrl}" />` : ""}
         <meta property="og:image" content="${ogImageUrl}" />
         <meta name="twitter:card" content="summary_large_image" />
-        <link rel="alternate" type="application/rss+xml" title="Crime Watch RSS" href="/feed.xml" />
+        <link rel="alternate" type="application/rss+xml" title="HANZAI Watch RSS" href="/feed.xml" />
         ${opts.jsonLd
           ? html`<script type="application/ld+json">
               ${raw(JSON.stringify(opts.jsonLd).replace(/</g, "\\u003c"))}
@@ -643,14 +682,7 @@ export function renderLayout(opts: LayoutOptions) {
       <body>
         <header class="site-header">
           <div class="header-inner">
-            <a class="brand" href="/"><span class="brand-dot" aria-hidden="true"></span>Crime Watch</a>
-            <nav class="nav" aria-label="メインナビゲーション">
-              ${navLink("cases", "/cases", "事件")}
-              ${navLink("themes", "/themes", "テーマ")}
-              ${navLink("laws", "/laws", "法律")}
-              ${navLink("prefectures", "/prefectures", "都道府県")}
-              ${navLink("stats", "/stats", "統計")}
-            </nav>
+            <a class="brand" href="/"><span class="brand-dot" aria-hidden="true"></span>HANZAI Watch</a>
             <button type="button" class="search-trigger" data-open-search aria-label="検索・絞り込みを開く">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
@@ -679,21 +711,12 @@ export function renderLayout(opts: LayoutOptions) {
           </div>
         </aside>
 
-        <div class="ai-notice">
-          <div class="ai-notice-inner">
-            <span class="ai-notice-text"
-              >AI が報道から自動で収集・分類した情報です。誤りを含む場合があります。出典の記事をご確認ください。</span
-            >
-            <a href="/contact">訂正を依頼</a>
-          </div>
-        </div>
         <main class="container">${opts.body}</main>
         <footer class="site-footer">
           <div class="footer-inner">
-            <div>Crime Watch — 報道・判決で明らかになった事実のみを記録します</div>
+            <div>HANZAI Watch — 報道・判決で明らかになった事実のみを記録します</div>
             <div class="footer-links">
               <a href="/about">このサイトについて</a>
-              <a href="/about/metrics">この数字について</a>
               <a href="/contact">削除・訂正の依頼</a>
               <a href="/feed.xml">RSS</a>
             </div>

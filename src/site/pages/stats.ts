@@ -6,7 +6,7 @@ import { nationalityStats } from "../../natstats";
 import { PREFECTURES } from "../../schema";
 import { csvCell, formatGender } from "../format";
 import { renderLayout } from "../layout";
-import { per100k, POPULATION_SOURCE_LABEL, POPULATION_SOURCE_URL } from "../population";
+import { per100k } from "../population";
 
 function buildBaseWhere(q: { from?: string; to?: string; law?: string; prefecture?: string }) {
   const where = ["c.status = 'published'"];
@@ -147,37 +147,22 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
   const body = html`
     <h1 class="page-h1">統計</h1>
     <p class="page-lead">
-      期間・法律・都道府県で絞り込んだクロス集計と、性別・年代・職業・国籍別の内訳を確認できます。
+      クロス集計と性別・年代・職業・国籍別の内訳を確認できます（右上の検索ボタンから期間・法律・都道府県で絞り込めます）。
     </p>
 
-    <div class="note-box" style="margin-bottom:16px">
-      ※ すべての数値は<strong>報道された事件・判決にもとづく集計</strong>であり、全国の全事件ではありません（報道されやすい事件に偏ります）。
-      人口 10 万人あたり件数は
-      <a href="${POPULATION_SOURCE_URL}" target="_blank" rel="noopener noreferrer">${POPULATION_SOURCE_LABEL}</a>
-      にもとづきます。
-    </div>
-
-    <section class="card filter-bar">
-      <button type="button" class="filter-bar-btn" data-open-search>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-        </svg>
-        <span>集計条件を絞り込む</span>
-        ${activeChips.length > 0 ? html`<span class="search-badge num">${activeChips.length}</span>` : ""}
-      </button>
-      ${activeChips.length > 0
-        ? html`<div class="pills">
+    ${activeChips.length > 0
+      ? html`<section class="card filter-bar" style="margin-bottom:16px">
+          <div class="pills">
             ${activeChips.map((chip) => html`<span class="pill pill-accent">${chip}</span>`)}
             <a class="pill" href="/stats">リセット</a>
-          </div>`
-        : html`<span class="small muted">期間・法律・都道府県で絞り込めます</span>`}
-      <a class="btn" href="${csvHref}" style="margin-left:auto">CSV ダウンロード</a>
-    </section>
+          </div>
+        </section>`
+      : ""}
 
-    <section class="card mt-16">
+    <section class="card">
       <h2 class="card-title">
         <span>都道府県 × 法律の件数（上位 60 組）</span>
-        <a class="small" href="${csvHref}">CSV →</a>
+        <a class="small" href="${csvHref}">CSV ダウンロード →</a>
       </h2>
       <div class="table-wrap">
         <table>
@@ -297,7 +282,7 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
 
   return c.html(
     renderLayout({
-      title: "統計｜Crime Watch",
+      title: "統計｜HANZAI Watch",
       description: "期間・法律・都道府県別のクロス集計、性別・年代・職業・国籍別の内訳（CSV ダウンロード対応）。",
       activeNav: "stats",
       canonicalPath: "/stats",

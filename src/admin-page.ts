@@ -7,7 +7,7 @@ export const ADMIN_PAGE = /* html */ `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Crime Watch 管理</title>
+<title>HANZAI Watch 管理</title>
 <style>
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #e1e4ea;
@@ -69,7 +69,7 @@ a { color: var(--accent); }
 </head>
 <body>
 <header>
-  <h1>Crime Watch 管理</h1>
+  <h1>HANZAI Watch 管理</h1>
   <nav id="tabs">
     <button data-tab="stats" class="on">集計</button>
     <button data-tab="cases">事件</button>
