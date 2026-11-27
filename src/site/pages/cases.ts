@@ -3,7 +3,7 @@ import type { Context } from "hono";
 import { html } from "hono/html";
 import type { Env } from "../../env";
 import { periodAt, type PenaltyPeriod } from "../../metrics";
-import { PREF_EXPR, type PrefBasis } from "../../prefstats";
+import { PREF_EXPR, resolvePrefBasis } from "../../prefstats";
 import { PREFECTURES } from "../../schema";
 import { THEMES } from "../../themes";
 import {
@@ -80,7 +80,7 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
     binds.push(q.theme);
   }
   if (q.prefecture) {
-    const basis: PrefBasis = q.pref_basis && q.pref_basis in PREF_EXPR ? (q.pref_basis as PrefBasis) : "occurrence";
+    const basis = resolvePrefBasis(q.pref_basis);
     if (q.prefecture === "不明") where.push(`${PREF_EXPR[basis]} IS NULL`);
     else {
       where.push(`${PREF_EXPR[basis]} = ?`);

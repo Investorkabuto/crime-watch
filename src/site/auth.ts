@@ -14,24 +14,40 @@ function parseCookie(header: string | undefined, name: string): string | null {
     const idx = part.indexOf("=");
     if (idx < 0) continue;
     const k = part.slice(0, idx).trim();
-    if (k === name) return decodeURIComponent(part.slice(idx + 1).trim());
+    if (k === name) {
+      try {
+        return decodeURIComponent(part.slice(idx + 1).trim());
+      } catch {
+        return null;
+      }
+    }
   }
   return null;
 }
 
-async function expectedCookieToken(viewerToken: string): Promise<string> {
-  return hmacSha256Hex(viewerToken, COOKIE_MESSAGE);
+async function expectedCookieToken(token: string): Promise<string> {
+  return hmacSha256Hex(token, COOKIE_MESSAGE);
+}
+
+function allowedPreviewTokens(env: Env): string[] {
+  return [env.VIEWER_TOKEN, env.ADMIN_TOKEN].filter((t): t is string => Boolean(t));
 }
 
 export async function isViewerAuthorized(c: Context<{ Bindings: Env }>): Promise<boolean> {
   if (c.env.SITE_PUBLIC === "true") return true;
-  const expected = c.env.VIEWER_TOKEN;
-  if (!expected) return false;
-  if (checkBearer(c.req.header("Authorization"), expected)) return true;
+  const tokens = allowedPreviewTokens(c.env);
+  if (tokens.length === 0) return false;
+  const authHeader = c.req.header("Authorization");
+  for (const expected of tokens) {
+    if (checkBearer(authHeader, expected)) return true;
+  }
   const cookieVal = parseCookie(c.req.header("Cookie"), COOKIE_NAME);
   if (!cookieVal) return false;
-  const expectedCookie = await expectedCookieToken(expected);
-  return timingSafeEqualStr(cookieVal, expectedCookie);
+  for (const expected of tokens) {
+    const expectedCookie = await expectedCookieToken(expected);
+    if (timingSafeEqualStr(cookieVal, expectedCookie)) return true;
+  }
+  return false;
 }
 
 function renderLoginPage(nextPath: string, errorMessage?: string) {
@@ -112,17 +128,17 @@ export const siteViewerGuard: MiddlewareHandler<{ Bindings: Env }> = async (c, n
 
 /** 簡易トークン入力の POST ハンドラ */
 export async function handleViewerLogin(c: Context<{ Bindings: Env }>) {
-  const form = await c.req.parseBody();
+  const form = await c.req.parseBody().catch(() => ({}) as Record<string, string | File>);
   const token = typeof form.token === "string" ? form.token.trim() : "";
   const nextRaw = typeof form.next === "string" ? form.next : "/";
   const nextPath = nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/";
-  const expected = c.env.VIEWER_TOKEN;
+  const matched = token ? allowedPreviewTokens(c.env).find((expected) => timingSafeEqualStr(token, expected)) : undefined;
 
-  if (!expected || !token || !timingSafeEqualStr(token, expected)) {
+  if (!matched) {
     c.header("Cache-Control", "no-store");
     return c.html(renderLoginPage(nextPath, "トークンが一致しません。"), 401);
   }
-  const cookieToken = await expectedCookieToken(expected);
+  const cookieToken = await expectedCookieToken(matched);
   const isHttps = new URL(c.req.url).protocol === "https:";
   const secureAttr = isHttps ? "; Secure" : "";
   c.header(

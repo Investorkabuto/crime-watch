@@ -2,6 +2,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import type { Env } from "../env";
 import { handleCaseFeed, handleMainFeed, handleRobots, handleSitemap, handleThemeFeed } from "../feeds";
+import { safeDecodeURIComponent } from "../normalize";
 import { THEMES } from "../themes";
 import { handleViewerLogin, siteViewerGuard } from "./auth";
 import { renderCaseDetailPage, renderCasesListPage } from "./pages/cases";
@@ -57,7 +58,8 @@ siteApp.get("/og/default.svg", () => {
 });
 
 siteApp.get("/og/theme/:theme", (c) => {
-  const rawName = decodeURIComponent(c.req.param("theme")).replace(/\.svg$/, "");
+  const decoded = safeDecodeURIComponent(c.req.param("theme"));
+  const rawName = decoded ? decoded.replace(/\.svg$/, "") : "";
   const title = (THEMES as readonly string[]).includes(rawName) ? rawName : "テーマ別事件データ";
   return new Response(renderOgSvg(title, "テーマ別の報道・判決アーカイブ"), {
     headers: { "Content-Type": "image/svg+xml; charset=utf-8" },

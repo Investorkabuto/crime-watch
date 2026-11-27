@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import { html } from "hono/html";
 import type { Env } from "../../env";
 import { nationalityStats } from "../../natstats";
+import { safeDecodeURIComponent } from "../../normalize";
 import { THEMES, type Theme } from "../../themes";
 import { formatDateShort, stageBadgeClass, THEME_GROUPS, THEME_META } from "../format";
 import { renderLayout } from "../layout";
@@ -68,10 +69,10 @@ export async function renderThemesListPage(c: Context<{ Bindings: Env }>) {
 /** テーマ別ページ /themes/:theme */
 export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
   const rawTheme = c.req.param("theme") ?? "";
-  const theme = decodeURIComponent(rawTheme);
+  const theme = safeDecodeURIComponent(rawTheme);
   const origin = new URL(c.req.url).origin;
 
-  if (!THEME_SET.has(theme)) {
+  if (!theme || !THEME_SET.has(theme)) {
     return c.html(
       renderLayout({
         title: "テーマが見つかりません｜HANZAI Watch",

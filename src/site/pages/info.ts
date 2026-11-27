@@ -2,7 +2,7 @@
 import type { Context } from "hono";
 import { html } from "hono/html";
 import type { Env } from "../../env";
-import { nowIso } from "../../normalize";
+import { nowIso, safeDecodeURIComponent } from "../../normalize";
 import { renderLayout } from "../layout";
 import { POPULATION_SOURCE_LABEL, POPULATION_SOURCE_URL } from "../population";
 
@@ -256,12 +256,12 @@ export function renderContactPage(c: Context<{ Bindings: Env }>) {
 
 function extractCaseId(targetUrl: string): string | null {
   const m = targetUrl.match(/\/cases\/([^/?#]+)/);
-  return m?.[1] ? decodeURIComponent(m[1]) : null;
+  return m?.[1] ? safeDecodeURIComponent(m[1]) : null;
 }
 
 /** POST /contact */
 export async function handleContactSubmit(c: Context<{ Bindings: Env }>) {
-  const form = await c.req.parseBody();
+  const form = await c.req.parseBody().catch(() => ({}) as Record<string, string | File>);
   const honeypot = typeof form.website === "string" ? form.website.trim() : "";
   const kindRaw = typeof form.kind === "string" ? form.kind : "correction";
   const kind = kindRaw === "removal" || kindRaw === "other" ? kindRaw : "correction";

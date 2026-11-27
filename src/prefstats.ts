@@ -23,8 +23,12 @@ export const PREF_EXPR: Record<PrefBasis, string> = {
 const CASE_LAWS = `SELECT r.case_id, rc.law_code FROM report_charges rc JOIN reports r ON r.id = rc.report_id
                    UNION SELECT j.case_id, jc.law_code FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id`;
 
+export function resolvePrefBasis(raw?: string): PrefBasis {
+  return raw === "police" || raw === "court" ? raw : "occurrence";
+}
+
 export async function prefectureStats(db: D1Database, q: PrefStatsQuery) {
-  const basis: PrefBasis = q.basis && q.basis in PREF_EXPR ? q.basis : "occurrence";
+  const basis: PrefBasis = resolvePrefBasis(q.basis);
   const where = ["c.status = 'published'"];
   const binds: unknown[] = [];
   const dateExpr = "COALESCE(c.occurred_on, substr(c.latest_at, 1, 10))";
