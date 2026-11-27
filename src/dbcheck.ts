@@ -10,6 +10,8 @@ export const REQUIRED_COLUMNS: { table: string; column: string; migration: strin
   { table: "cases", column: "progress", migration: "0009_case_progress.sql" },
   { table: "case_themes", column: "theme", migration: "0010_themes.sql" },
   { table: "report_persons", column: "public_figure", migration: "0010_themes.sql" },
+  { table: "requests", column: "kind", migration: "0011_public_site.sql" },
+  { table: "agg_sentence_dist", column: "median_months", migration: "0011_public_site.sql" },
 ];
 
 export type DbStatus =

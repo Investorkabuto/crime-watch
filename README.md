@@ -13,6 +13,7 @@
 
 | メソッド | パス | 認証 | 内容 |
 |---|---|---|---|
+| GET | `/`, `/cases`, `/themes`, `/laws`, `/prefectures`, `/stats`, `/about`, `/contact` | 閲覧（非公開時はログイン画面） | 公開サイト（SSR + SVG + RSS + sitemap） |
 | GET | `/admin` | なし（データは閲覧 API 経由） | 管理画面 |
 | GET | `/api/v1/health` | なし | 死活確認。テーブルと初期データがそろっていれば `database: "ready"`（そろっていなければ 503） |
 | POST | `/api/v1/ingest` | Bearer `INGEST_TOKEN` + HMAC 署名 | Muse からのデータ受信（1 回 100 件まで） |
@@ -27,6 +28,7 @@
 | POST | `/api/v1/admin/cases/:id/status` | 閲覧 | 事件の公開・非公開の切り替え（`{"status":"hidden"}`） |
 | POST | `/api/v1/admin/aliases` | 閲覧 | 罪状辞書に追加（`{"alias","law_code"}`）し、判定し直す |
 | POST | `/api/v1/admin/rescan-flags` | 閲覧 | 自動チェックのルール変更後に、保存済みデータの検出結果を付け直す |
+| POST | `/api/v1/admin/recompute-aggregates` | 閲覧 | 公開サイト用の集計テーブルを再計算する（Cron でも毎時実行） |
 
 ### 受信 API の署名
 
