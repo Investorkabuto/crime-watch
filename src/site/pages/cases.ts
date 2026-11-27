@@ -150,6 +150,14 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
       binds.push(nat, nat);
     }
   }
+  if (q.residence_status?.trim()) {
+    const rs = q.residence_status.trim();
+    where.push(
+      `(EXISTS (SELECT 1 FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = c.id AND p.residence_status = ?)
+        OR EXISTS (SELECT 1 FROM judgments j WHERE j.case_id = c.id AND j.status = 'published' AND j.defendant_residence_status = ?))`,
+    );
+    binds.push(rs, rs);
+  }
   if (q.progress) {
     where.push("c.progress = ?");
     binds.push(q.progress);
@@ -226,6 +234,7 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
       age_group: q.age_group,
       occupation: q.occupation,
       nationality: q.nationality,
+      residence_status: q.residence_status,
       progress: q.progress,
       from: q.from,
       to: q.to,
@@ -246,6 +255,7 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
   if (q.age_group?.trim()) activeChips.push(`年代: ${q.age_group.trim()}`);
   if (q.occupation?.trim()) activeChips.push(`職業: ${q.occupation.trim()}`);
   if (q.nationality?.trim()) activeChips.push(`国籍: ${q.nationality.trim()}`);
+  if (q.residence_status?.trim()) activeChips.push(`在留資格: ${q.residence_status.trim()}`);
   if (q.law) activeChips.push(laws.find((l) => l.code === q.law)?.name ?? q.law);
   if (q.group) activeChips.push(q.group);
   if (q.theme) activeChips.push(`#${q.theme}`);

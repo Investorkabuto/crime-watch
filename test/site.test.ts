@@ -295,9 +295,48 @@ describe("公開サイト（S1 + S2）", () => {
     expect(themeHtml).toContain("ratio-bar");
     expect(themeHtml).not.toContain("このテーマの RSS");
 
+    // 外国人犯罪テーマに在留資格つきの事件を追加し、国籍別＆在留資格別の分布グラフと絞り込みを確認
+    const fRes = await signedIngest({
+      items: [
+        {
+          type: "report",
+          external_id: "site-test-r-foreign",
+          case_ref: "site-test-case-foreign",
+          stage: "逮捕",
+          title: "技能実習生による不法残留・窃盗事件",
+          summary: "技能実習生として来日した男が窃盗容疑で逮捕された。",
+          charges: ["窃盗"],
+          is_juvenile: false,
+          occurred_on: "2026-04-10",
+          reported_at: "2026-04-11T10:00:00+09:00",
+          prefecture: "愛知県",
+          themes: ["外国人犯罪"],
+          suspects: [
+            {
+              person_ref: "p-site-foreign-1",
+              gender: "male",
+              age: 26,
+              nationality: "ベトナム",
+              residence_status: "技能実習",
+            },
+          ],
+          source_url: "https://example.com/news/site-foreign-1",
+          source_name: "テスト新聞",
+        },
+      ],
+    });
+    expect(fRes.status).toBe(200);
+
     const foreignThemeHtml = await (await view(`/themes/${encodeURIComponent("外国人犯罪")}`)).text();
     expect(foreignThemeHtml).toContain("国籍別の人数");
+    expect(foreignThemeHtml).toContain("在留資格別の分布");
+    expect(foreignThemeHtml).toContain("技能実習");
+    expect(foreignThemeHtml).toContain(`/cases?theme=${encodeURIComponent("外国人犯罪")}&residence_status=${encodeURIComponent("技能実習")}`);
     expect(foreignThemeHtml).toContain("タップで事件一覧へ");
+
+    const resCasesHtml = await (await view(`/cases?residence_status=${encodeURIComponent("技能実習")}`)).text();
+    expect(resCasesHtml).toContain("技能実習生による不法残留・窃盗事件");
+    expect(resCasesHtml).toContain("在留資格: 技能実習");
 
     const themeRss = await (await view(`/themes/${encodeURIComponent("強盗")}/feed.xml`)).text();
     const rssMatches = themeRss.match(/強盗致傷事件で被告に拘禁刑9年の判決/g) ?? [];
@@ -375,6 +414,8 @@ describe("公開サイト（S1 + S2）", () => {
     expect(statsHtml).toContain("ratio-bar");
     expect(statsHtml).toContain(`/cases?age_group=${encodeURIComponent("20代")}&amp;gender=male`);
     expect(statsHtml).toContain(`/cases?occupation=${encodeURIComponent("無職")}`);
+    expect(statsHtml).toContain("在留資格別の分布");
+    expect(statsHtml).toContain(`/cases?residence_status=${encodeURIComponent("技能実習")}`);
 
     // /cases の性別・年代・職業フィルタが動作すること
     const attrCasesHtml = await (await view(`/cases?gender=male&age_group=${encodeURIComponent("20代")}&occupation=${encodeURIComponent("無職")}`)).text();

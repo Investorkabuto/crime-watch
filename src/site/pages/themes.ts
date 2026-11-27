@@ -346,6 +346,56 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
           <p class="small muted mt-12 mb-0">
             記事に明記された国籍のみを集計しています。報道された事件にもとづく集計であり、人口あたりの補正はしていません。
           </p>
+        </section>
+
+        <section class="card mt-16">
+          <h2 class="card-title">
+            <span>在留資格別の分布</span>
+            <span class="small muted">タップで事件一覧へ</span>
+          </h2>
+          ${(() => {
+            const resRows = natData.residence_breakdown;
+            if (!resRows.length) {
+              return html`<p class="muted small mb-0">在留資格の記載があるデータはまだありません。</p>`;
+            }
+            const maxRes = Math.max(1, ...resRows.map((r) => r.people));
+            const totalRes = resRows.reduce((acc, r) => acc + r.people, 0);
+            return html`<div class="nat-list" role="list" aria-label="在留資格別の分布グラフ">
+                ${resRows.map((r) => {
+                  const w = Math.max(6, (r.people / maxRes) * 100);
+                  const share = totalRes > 0 ? Math.round((r.people / totalRes) * 100) : 0;
+                  const col =
+                    r.group === "定着居住者" ? "#38bdf8" : r.group === "来日外国人" ? "var(--accent)" : "var(--muted)";
+                  return html`<a
+                    class="nat-row"
+                    href="/cases?theme=${encodeURIComponent(theme)}&residence_status=${encodeURIComponent(r.status)}"
+                    role="listitem"
+                  >
+                    <span class="nat-label">${r.status}</span>
+                    <span class="nat-track" title="${r.status}: ${r.people}人（全体の ${share}%）">
+                      <span class="nat-seg" style="width:${w}%;background:${col}">${w >= 18 ? `${share}%` : ""}</span>
+                    </span>
+                    <span class="nat-count num"
+                      >${r.people.toLocaleString("ja-JP")}人<span class="nat-chev" aria-hidden="true">›</span></span
+                    >
+                  </a>`;
+                })}
+              </div>
+              <div class="chart-legend mt-12" aria-hidden="true">
+                <span class="chart-legend-item"
+                  ><span class="chart-dot" style="background:var(--accent)"></span>来日外国人</span
+                >
+                <span class="chart-legend-item"
+                  ><span class="chart-dot" style="background:#38bdf8"></span>定着居住者</span
+                >
+                <span class="chart-legend-item"
+                  ><span class="chart-dot" style="background:var(--muted)"></span>その他</span
+                >
+              </div>`;
+          })()}
+          <p class="small muted mt-12 mb-0">
+            記事に在留資格（技能実習・短期滞在・定住者など）が明記された人物のみを集計しています。
+          </p>
         </section>`
       : ""}
 
