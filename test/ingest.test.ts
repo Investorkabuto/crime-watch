@@ -597,3 +597,22 @@ describe("受け付けなかった項目の一覧", () => {
     expect((await list()).rejections.find((r) => r.external_id === "rej-1")).toBeUndefined();
   });
 });
+
+describe("罪状の判定し直し", () => {
+  it("前の罪状に頼る「行使」も、元の文字列ごとに判定し直す", async () => {
+    const item = { ...report.items[0], external_id: "rc-1", case_ref: "case-rc-1", charges: ["詐欺", "虚偽公文書作成・行使"] };
+    await signedIngest({ items: [item] });
+    const r = await env.DB.prepare("SELECT id FROM reports WHERE external_id = 'rc-1'").first<{ id: string }>();
+    // 「行使」の規則がなかった頃の保存状態を再現する
+    await env.DB.prepare("UPDATE report_charges SET charge_text = '行使', law_code = NULL, matched_alias = NULL WHERE report_id = ? AND seq = 2")
+      .bind(r!.id)
+      .run();
+    const res = await SELF.fetch("https://cw.test/api/v1/admin/reclassify", { method: "POST", headers: { Authorization: "Bearer test-viewer-token" } });
+    expect(res.status).toBe(200);
+    const { results } = await env.DB.prepare("SELECT seq, charge_text, law_code FROM report_charges WHERE report_id = ? ORDER BY seq")
+      .bind(r!.id)
+      .all<{ seq: number; charge_text: string; law_code: string | null }>();
+    expect(results.map((x) => x.law_code)).toEqual(["fraud", "forgery", "forgery"]);
+    expect(results[2]?.charge_text).toBe("虚偽公文書作成・行使");
+  });
+});
