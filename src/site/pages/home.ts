@@ -2,9 +2,9 @@
 import type { Context } from "hono";
 import { html } from "hono/html";
 import type { Env } from "../../env";
-import { daysAgoJst, formatDateShort, formatDemand, formatSentence, todayJst } from "../format";
+import { daysAgoJst, formatDateShort, formatDemand, formatPct, formatSentence, todayJst } from "../format";
 import { renderLayout } from "../layout";
-import { renderMiniSentencingBar, renderStackedMonthlyBarChart } from "../svg";
+import { renderStackedMonthlyBarChart } from "../svg";
 
 /** JST の今月を含む直近 12 ヶ月の YYYY-MM リスト（昇順） */
 function last12Months(todayIso: string): string[] {
@@ -90,7 +90,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         `SELECT j.id, j.case_id, j.title, j.decided_on, j.sentence_type, j.term_months,
                 j.indeterminate_min_months, j.indeterminate_max_months, j.suspended_months, j.probation,
                 j.fine_yen, j.protective_disposition, j.demand_type, j.demand_months, j.demand_fine_yen,
-                j.position_in_range, co.name AS court_name
+                j.position_in_range, j.ratio_to_demand, co.name AS court_name
          FROM judgments j
          JOIN cases c ON c.id = j.case_id
          JOIN courts co ON co.id = j.court_id
@@ -104,7 +104,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         `SELECT j.id, j.case_id, j.title, j.decided_on, j.sentence_type, j.term_months,
                 j.indeterminate_min_months, j.indeterminate_max_months, j.suspended_months, j.probation,
                 j.fine_yen, j.protective_disposition, j.demand_type, j.demand_months, j.demand_fine_yen,
-                j.position_in_range, co.name AS court_name
+                j.position_in_range, j.ratio_to_demand, co.name AS court_name
          FROM judgments j
          JOIN cases c ON c.id = j.case_id
          JOIN courts co ON co.id = j.court_id
@@ -175,6 +175,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
     demand_months: number | null;
     demand_fine_yen: number | null;
     position_in_range: number | null;
+    ratio_to_demand: number | null;
     court_name: string;
   };
   const todayJudgments = (todayJudgRes?.results ?? []) as JudgRow[];
@@ -182,6 +183,19 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
   const judgmentHeading = todayJudgments.length > 0 ? `今日の判決（${formatDateShort(today)}）` : "最近の判決";
 
   const body = html`
+    ${stackedChart
+      ? html`<section class="card" style="margin-bottom:14px">
+          <h2 class="card-title">
+            <span>直近 1 年の犯罪・判決件数推移</span>
+            <span class="chart-legend" aria-hidden="true">
+              <span class="chart-legend-item"><span class="chart-dot" style="background:var(--accent)"></span>犯罪報道</span>
+              <span class="chart-legend-item"><span class="chart-dot" style="background:#38bdf8"></span>判決</span>
+            </span>
+          </h2>
+          ${stackedChart}
+        </section>`
+      : ""}
+
     <section class="bento-kpi-2" aria-label="今週のサマリー">
       <a class="kpi-card" href="/cases?from=${encodeURIComponent(weekAgo)}">
         <div class="kpi-head">
@@ -273,20 +287,23 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
           <div class="quick-desc">クロス集計と属性別内訳</div>
         </div>
       </a>
+      <a class="quick-tile" href="/themes/${encodeURIComponent("外国人犯罪")}">
+        <div class="quick-tile-top">
+          <span class="quick-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
+        <div>
+          <div class="quick-title">外国人犯罪</div>
+          <div class="quick-desc">国籍別集計と該当事件</div>
+        </div>
+      </a>
     </section>
-
-    ${stackedChart
-      ? html`<section class="card" style="margin-bottom:16px">
-          <h2 class="card-title">
-            <span>直近 1 年の犯罪・判決件数推移</span>
-            <span class="chart-legend" aria-hidden="true">
-              <span class="chart-legend-item"><span class="chart-dot" style="background:var(--accent)"></span>犯罪報道</span>
-              <span class="chart-legend-item"><span class="chart-dot" style="background:#38bdf8"></span>判決</span>
-            </span>
-          </h2>
-          ${stackedChart}
-        </section>`
-      : ""}
 
     <section class="card">
       <h2 class="card-title">
@@ -350,16 +367,21 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         ${shownJudgments.length
           ? html`<ul class="feed">
               ${shownJudgments.map((j) => {
-                const mini = renderMiniSentencingBar(j.position_in_range, j.suspended_months != null);
                 const dem = formatDemand(j);
+                const isCustodial = j.sentence_type === "拘禁刑" || j.sentence_type === "懲役" || j.sentence_type === "禁錮";
+                const execBadge = isCustodial ? (j.suspended_months != null ? "執行猶予" : "実刑") : null;
                 return html`<li class="feed-item">
                   <div class="feed-meta">
+                    ${execBadge ? html`<span class="pill ${j.suspended_months != null ? "" : "pill-accent"}">${execBadge}</span>` : ""}
                     <span>${j.court_name}</span>
                     <span class="num">${formatDateShort(j.decided_on)}</span>
                   </div>
                   <a class="feed-title" href="/cases/${encodeURIComponent(j.case_id)}">${formatSentence(j)}</a>
-                  ${dem ? html`<div class="small muted">求刑: ${dem}</div>` : ""}
-                  ${mini ? html`<div class="mt-8">${mini}</div>` : ""}
+                  ${dem
+                    ? html`<div class="small muted num">
+                        求刑 ${dem}${j.ratio_to_demand != null ? `（求刑の ${formatPct(j.ratio_to_demand)}）` : ""}
+                      </div>`
+                    : ""}
                   <div class="small muted">${j.title}</div>
                 </li>`;
               })}

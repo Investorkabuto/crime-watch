@@ -6,7 +6,7 @@ import { formatMonths } from "../../normalize";
 import { ci95, formatDateJa, formatDateShort, formatGender, formatPct } from "../format";
 import { LAW_TEXTS } from "../law-texts";
 import { renderLayout } from "../layout";
-import { renderMonthlyBarChart } from "../svg";
+import { renderMonthlyBarChart, renderSentencingDistributionChart } from "../svg";
 
 const MIN_METRIC_N = 20;
 
@@ -52,13 +52,24 @@ export async function renderLawsListPage(c: Context<{ Bindings: Env }>) {
 (() => {
   const btns = document.querySelectorAll("[data-law-tab]");
   const panels = document.querySelectorAll("[data-law-panel]");
+  const activate = (target, persist) => {
+    btns.forEach((b) => b.classList.toggle("is-active", b.dataset.lawTab === target));
+    panels.forEach((p) => { p.style.display = p.dataset.lawPanel === target ? "" : "none"; });
+    if (persist) {
+      try { sessionStorage.setItem("cw_law_cat", target); } catch {}
+    }
+  };
+  const restore = () => {
+    try {
+      const saved = sessionStorage.getItem("cw_law_cat");
+      if (saved === "刑法犯" || saved === "特別法犯") activate(saved, false);
+    } catch {}
+  };
   btns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const target = btn.dataset.lawTab;
-      btns.forEach((b) => b.classList.toggle("is-active", b === btn));
-      panels.forEach((p) => { p.style.display = p.dataset.lawPanel === target ? "" : "none"; });
-    });
+    btn.addEventListener("click", () => activate(btn.dataset.lawTab, true));
   });
+  restore();
+  window.addEventListener("pageshow", restore);
 })();
 `;
 
@@ -205,8 +216,11 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
     effective_from: string;
     effective_to: string | null;
     statutory_penalty: string;
+    stat_min_months: number | null;
+    stat_max_months: number | null;
     verified: number;
   }[];
+  const currentPeriod = periods.find((p) => p.effective_to == null) ?? periods[0] ?? null;
   const monthly = (monthlyRes?.results ?? []) as { month: string; cases: number }[];
   const totalCases = monthly.reduce((s, r) => s + r.cases, 0);
 
@@ -233,6 +247,18 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
     avg_ratio_to_demand: number | null;
     n_ratio_to_demand: number;
   } | null;
+
+  const sortedTerms = judgAttrs.map((j) => j.term_months).sort((a, b) => a - b);
+  const quantile = (arr: number[], qVal: number) =>
+    arr.length ? arr[Math.min(arr.length - 1, Math.floor((arr.length - 1) * qVal))]! : null;
+  const distChart = renderSentencingDistributionChart({
+    statMinMonths: currentPeriod?.stat_min_months ?? null,
+    statMaxMonths: currentPeriod?.stat_max_months ?? null,
+    points: judgAttrs.map((j) => ({ termMonths: j.term_months, isSuspended: j.suspended_months != null })),
+    p25Months: distRow?.p25_months ?? quantile(sortedTerms, 0.25),
+    medianMonths: distRow?.median_months ?? quantile(sortedTerms, 0.5),
+    p75Months: distRow?.p75_months ?? quantile(sortedTerms, 0.75),
+  });
 
   const custodialN = distRow?.custodial_n ?? judgAttrs.length;
   const suspendedN = distRow?.suspended_n ?? judgAttrs.filter((j) => j.suspended_months != null).length;
@@ -357,6 +383,30 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
         <div class="kpi-sub">${custodialN < MIN_METRIC_N ? `件数 ${MIN_METRIC_N} 件未満のため非表示` : `n=${custodialN}`}</div>
       </div>
     </section>
+
+    ${distChart
+      ? html`<section class="card">
+          <h2 class="card-title">
+            <span>量刑の分布（法定刑の範囲内・${judgAttrs.length}件）</span>
+            <span class="chart-legend" aria-hidden="true">
+              <span class="chart-legend-item"
+                ><span class="chart-dot" style="border-radius:50%;background:var(--accent)"></span>実刑</span
+              >
+              <span class="chart-legend-item"
+                ><span
+                  class="chart-dot"
+                  style="border-radius:50%;background:var(--surface-solid);border:2px solid #38bdf8"
+                ></span
+                >執行猶予</span
+              >
+            </span>
+          </h2>
+          ${currentPeriod?.statutory_penalty
+            ? html`<p class="small muted" style="margin:-6px 0 10px">現行法定刑: ${currentPeriod.statutory_penalty}</p>`
+            : ""}
+          ${distChart}
+        </section>`
+      : ""}
 
     ${distRow && distRow.n >= MIN_METRIC_N
       ? html`<section class="card">

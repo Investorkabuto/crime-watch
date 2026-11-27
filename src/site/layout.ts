@@ -89,10 +89,11 @@ const SITE_CSS = `
   }
 }
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; }
 body {
   margin: 0;
   min-height: 100dvh;
+  touch-action: manipulation;
   background-color: var(--bg);
   background-image: var(--bg-glow);
   background-attachment: fixed;
@@ -319,9 +320,9 @@ a.kpi-card:hover {
 .kpi-unit { font-size: 14px; font-weight: 600; color: var(--muted); margin-left: 3px; }
 .kpi-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
-/* Dashboard quick-access tiles */
+/* Dashboard quick-access tiles (3x2 on desktop, 2x3 on mobile) */
 .quick-grid {
-  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px;
 }
 .quick-tile {
   display: flex; flex-direction: column; justify-content: space-between; gap: 8px;

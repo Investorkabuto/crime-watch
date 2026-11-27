@@ -155,9 +155,8 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
   const occRows = occRes.results;
   const maxOcc = Math.max(1, ...occRows.map((o) => o.people));
 
-  // 国籍別（記載ありのみをグラフ描画、「記載なし」はサマリーチップへ）
+  // 国籍別（記載ありのみをグラフ描画）
   const statedNats = natData.nationalities.filter((r) => r.nationality !== "記載なし");
-  const unstatedNat = natData.nationalities.find((r) => r.nationality === "記載なし");
   const maxNat = Math.max(1, ...statedNats.map((r) => r.people));
 
   const csvParams = new URLSearchParams();
@@ -215,13 +214,29 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
 (() => {
   const btns = document.querySelectorAll("[data-stats-tab]");
   const panels = document.querySelectorAll("[data-stats-panel]");
+  const validTabs = new Set(["demo", "occ", "nat", "cross"]);
+  const activate = (target, persist) => {
+    const t = validTabs.has(target) ? target : "demo";
+    btns.forEach((b) => b.classList.toggle("is-active", b.dataset.statsTab === t));
+    panels.forEach((p) => { p.style.display = p.dataset.statsPanel === t ? "" : "none"; });
+    if (persist) {
+      try { sessionStorage.setItem("cw_stats_tab", t); } catch {}
+      try { history.replaceState(null, "", "#tab=" + t); } catch {}
+    }
+  };
+  const restore = () => {
+    const m = location.hash.match(/tab=([a-z]+)/);
+    let saved = m ? m[1] : null;
+    if (!saved) {
+      try { saved = sessionStorage.getItem("cw_stats_tab"); } catch {}
+    }
+    if (saved && validTabs.has(saved)) activate(saved, false);
+  };
   btns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const target = btn.dataset.statsTab;
-      btns.forEach((b) => b.classList.toggle("is-active", b === btn));
-      panels.forEach((p) => { p.style.display = p.dataset.statsPanel === target ? "" : "none"; });
-    });
+    btn.addEventListener("click", () => activate(btn.dataset.statsTab, true));
   });
+  restore();
+  window.addEventListener("pageshow", restore);
   const moreBtn = document.getElementById("cw-cross-more");
   if (moreBtn) {
     moreBtn.addEventListener("click", () => {
@@ -365,15 +380,8 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
     <!-- タブ 3: 国籍（グラフ） -->
     <section class="card" data-stats-panel="nat" style="display:none">
       <h2 class="card-title">
-        <span>国籍別の人数（記載あり）</span>
-        <span class="pills">
-          <span class="pill">記載あり <strong class="num">${natData.stated_people.toLocaleString("ja-JP")}</strong>人</span>
-          ${unstatedNat
-            ? html`<a class="pill" href="${casesHref({ nationality: "記載なし" })}"
-                >記載なし <strong class="num">${unstatedNat.people.toLocaleString("ja-JP")}</strong>人</a
-              >`
-            : ""}
-        </span>
+        <span>国籍別の人数</span>
+        <span class="small muted">タップで事件一覧へ</span>
       </h2>
 
       ${statedNats.length

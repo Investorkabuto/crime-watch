@@ -238,6 +238,96 @@ export function renderStackedMonthlyBarChart(series: { month: string; cases: num
   );
 }
 
+/** 法律別の量刑分布グラフ SVG（法定刑の範囲内に各判決の刑期をドット分布＋四分位帯で表示） */
+export function renderSentencingDistributionChart(input: {
+  statMinMonths: number | null;
+  statMaxMonths: number | null;
+  points: { termMonths: number; isSuspended: boolean }[];
+  medianMonths?: number | null;
+  p25Months?: number | null;
+  p75Months?: number | null;
+}) {
+  if (input.points.length === 0) return null;
+  const terms = input.points.map((p) => p.termMonths);
+  const dataMin = Math.min(...terms);
+  const dataMax = Math.max(...terms);
+  const minM = input.statMinMonths != null ? Math.min(input.statMinMonths, dataMin) : Math.max(0, dataMin - 6);
+  const maxM = input.statMaxMonths != null ? Math.max(input.statMaxMonths, dataMax) : dataMax + 6;
+  const span = Math.max(1, maxM - minM);
+
+  const W = 600;
+  const H = 136;
+  const padL = 28;
+  const padR = 28;
+  const plotW = W - padL - padR;
+  const axisY = 92;
+
+  const xOf = (m: number) => Math.round((padL + Math.max(0, Math.min(1, (m - minM) / span)) * plotW) * 10) / 10;
+
+  // 法定刑の範囲ハイライト
+  let statBand = "";
+  if (input.statMinMonths != null && input.statMaxMonths != null && input.statMaxMonths > input.statMinMonths) {
+    const sx1 = xOf(input.statMinMonths);
+    const sx2 = xOf(input.statMaxMonths);
+    statBand = `<rect x="${sx1}" y="${axisY - 6}" width="${Math.max(4, sx2 - sx1)}" height="12" rx="6" fill="var(--track)" stroke="var(--line-strong)" stroke-width="1" />`;
+  } else {
+    statBand = `<rect x="${padL}" y="${axisY - 6}" width="${plotW}" height="12" rx="6" fill="var(--track)" stroke="var(--line)" stroke-width="1" />`;
+  }
+
+  // 四分位帯（25%〜75%）と中央値
+  let iqrMarkup = "";
+  if (input.p25Months != null && input.p75Months != null && input.points.length >= 4) {
+    const x25 = xOf(input.p25Months);
+    const x75 = xOf(input.p75Months);
+    iqrMarkup += `<rect x="${x25}" y="${axisY - 8}" width="${Math.max(4, x75 - x25)}" height="16" rx="6" fill="var(--dist-band)" />`;
+  }
+  if (input.medianMonths != null && input.points.length >= 2) {
+    const xm = xOf(input.medianMonths);
+    iqrMarkup +=
+      `<line x1="${xm}" y1="${axisY - 58}" x2="${xm}" y2="${axisY + 10}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.8" />` +
+      `<text x="${xm}" y="20" text-anchor="${xm > W - 80 ? "end" : xm < 80 ? "start" : "middle"}" font-size="11" font-weight="700" fill="var(--accent)">中央値 ${escXml(formatMonths(Math.round(input.medianMonths)) ?? "")}</text>`;
+  }
+
+  // 近い刑期のドットを縦に少しずつ積んで重なりを見える化（ビーズウォーム風）
+  const sorted = [...input.points].sort((a, b) => a.termMonths - b.termMonths);
+  const bucketCounts = new Map<number, number>();
+  const dots = sorted
+    .map((pt) => {
+      const x = xOf(pt.termMonths);
+      const bucket = Math.round(x / 10);
+      const stackIdx = bucketCounts.get(bucket) ?? 0;
+      bucketCounts.set(bucket, stackIdx + 1);
+      const cy = Math.max(26, axisY - 16 - Math.min(stackIdx, 6) * 9);
+      const fill = pt.isSuspended ? "var(--surface-solid)" : "var(--accent)";
+      const stroke = pt.isSuspended ? "#38bdf8" : "var(--accent)";
+      const label = `${formatMonths(pt.termMonths) ?? ""}（${pt.isSuspended ? "執行猶予" : "実刑"}）`;
+      return `<circle cx="${x}" cy="${cy}" r="4.5" fill="${fill}" stroke="${stroke}" stroke-width="2"><title>${escXml(label)}</title></circle>`;
+    })
+    .join("");
+
+  // 目盛りラベル（下限・中央・上限）
+  const midM = Math.round(minM + span / 2);
+  const ticks = [
+    { x: padL, anchor: "start", text: formatMonths(Math.round(minM)) ?? "" },
+    { x: Math.round((padL + plotW / 2) * 10) / 10, anchor: "middle", text: formatMonths(midM) ?? "" },
+    { x: W - padR, anchor: "end", text: formatMonths(Math.round(maxM)) ?? "" },
+  ]
+    .map(
+      (tk) =>
+        `<text x="${tk.x}" y="${axisY + 28}" text-anchor="${tk.anchor}" font-size="11" fill="var(--muted)">${escXml(tk.text)}</text>`,
+    )
+    .join("");
+
+  return raw(
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="法定刑の範囲内における量刑分布グラフ" style="display:block;height:auto">` +
+      statBand +
+      iqrMarkup +
+      dots +
+      ticks +
+      `</svg>`,
+  );
+}
+
 /** 固定 OGP 画像（SVG。テーマ別・デフォルト用） */
 export function renderOgSvg(title: string, subtitle: string): string {
   const safeTitle = escXml(title.slice(0, 36));
