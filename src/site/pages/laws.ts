@@ -3,7 +3,7 @@ import type { Context } from "hono";
 import { html, raw } from "hono/html";
 import type { Env } from "../../env";
 import { formatMonths } from "../../normalize";
-import { ci95, formatDateJa, formatDateShort, formatGender, formatPct } from "../format";
+import { ci95, formatDateJa, formatDateShort, formatGender, formatPct, stageBadgeClass } from "../format";
 import { LAW_TEXTS } from "../law-texts";
 import { renderLayout } from "../layout";
 import { renderMonthlyBarChart, renderSentencingDistributionChart } from "../svg";
@@ -328,10 +328,10 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
               <div class="small muted" style="font-weight:700;margin-bottom:4px">わかりやすい要約</div>
               <p style="margin:0;color:var(--text);font-size:14.5px;line-height:1.7">${lawText.summary}</p>
             </div>
-            <div class="note-box" style="color:var(--text-sub);line-height:1.75">
-              <div class="small muted" style="font-weight:700;margin-bottom:6px">${lawText.articleTitle}</div>
-              <div style="white-space:pre-line;font-size:13px">${lawText.articleText}</div>
-            </div>`
+            <details class="article-details">
+              <summary class="article-summary">条文全文を見る（${lawText.articleTitle}）</summary>
+              <div class="article-body">${lawText.articleText}</div>
+            </details>`
         : ""}
 
       ${periods.length
@@ -512,7 +512,7 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
             ${cases.map(
               (k) => html`<li class="feed-item">
                 <div class="feed-meta">
-                  <span class="pill pill-accent">${k.latest_stage}</span>
+                  <span class="pill ${stageBadgeClass(k.latest_stage)}">${k.latest_stage}</span>
                   <span>${k.prefecture ?? "場所不明"}</span>
                   <span class="num">${formatDateShort(k.latest_at)}</span>
                 </div>

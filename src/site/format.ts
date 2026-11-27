@@ -229,6 +229,33 @@ export function safeHref(url: string | null | undefined): string | null {
   }
 }
 
+/** 段階ラベル（逮捕・起訴・判決・確定・不起訴・発生等）に応じた色分け CSS クラス */
+export function stageBadgeClass(stage: string | null | undefined): string {
+  const s = (stage ?? "").trim();
+  if (s === "逮捕" || s === "再逮捕" || s === "送検" || s === "書類送検") return "pill-stage-arrest";
+  if (s === "起訴" || s === "公判中" || s === "略式起訴" || s === "略式手続") return "pill-stage-indict";
+  if (s === "判決" || s === "控訴" || s === "上告") return "pill-stage-judgment";
+  if (s === "確定") return "pill-stage-final";
+  if (s === "不起訴" || s === "処分保留" || s === "家裁送致") return "pill-stage-other";
+  return "pill-stage-occurred";
+}
+
+/** 履歴件数と最新日時から「NEW（新規）」または「続報（更新）」のラベル情報を返す */
+export function caseActivityBadge(
+  entryCount: number | null | undefined,
+  latestAt: string,
+  recentThresholdIso: string,
+): { kind: "new" | "update" | "none"; label: string; datePrefix: string } {
+  const n = Number(entryCount ?? 0);
+  if (n >= 2) {
+    return { kind: "update", label: `続報 ${n}`, datePrefix: "更新" };
+  }
+  if (latestAt && latestAt.slice(0, 10) >= recentThresholdIso) {
+    return { kind: "new", label: "NEW", datePrefix: "報道" };
+  }
+  return { kind: "none", label: "", datePrefix: "報道" };
+}
+
 /** 今日の YYYY-MM-DD（JST） */
 export function todayJst(): string {
   const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);

@@ -2,7 +2,16 @@
 import type { Context } from "hono";
 import { html } from "hono/html";
 import type { Env } from "../../env";
-import { daysAgoJst, formatDateShort, formatDemand, formatPct, formatSentence, todayJst } from "../format";
+import {
+  caseActivityBadge,
+  daysAgoJst,
+  formatDateShort,
+  formatDemand,
+  formatPct,
+  formatSentence,
+  stageBadgeClass,
+  todayJst,
+} from "../format";
 import { renderLayout } from "../layout";
 import { renderStackedMonthlyBarChart } from "../svg";
 
@@ -28,6 +37,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
   const origin = new URL(c.req.url).origin;
   const today = todayJst();
   const weekAgo = daysAgoJst(7);
+  const recentThreshold = daysAgoJst(3);
   const months12 = last12Months(today);
   const firstMonth = months12[0]!;
 
@@ -79,7 +89,9 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
     db
       .prepare(
         `SELECT c.id, c.title, c.prefecture, c.latest_stage, c.progress, c.latest_at, c.occurred_on,
-                (SELECT group_concat(DISTINCT ct.theme) FROM case_themes ct WHERE ct.case_id = c.id) AS themes
+                (SELECT group_concat(DISTINCT ct.theme) FROM case_themes ct WHERE ct.case_id = c.id) AS themes,
+                ((SELECT COUNT(*) FROM reports r WHERE r.case_id = c.id)
+                  + (SELECT COUNT(*) FROM judgments j WHERE j.case_id = c.id AND j.status = 'published')) AS entry_count
          FROM cases c
          WHERE c.status = 'published'
          ORDER BY c.latest_at DESC
@@ -155,6 +167,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
     latest_at: string;
     occurred_on: string | null;
     themes: string | null;
+    entry_count: number;
   };
   const recentCases = (recentCasesRes?.results ?? []) as CaseRow[];
 
@@ -255,7 +268,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
           <span class="kpi-arrow" aria-hidden="true">→</span>
         </div>
         <div>
-          <div class="quick-title">テーマ別</div>
+          <div class="quick-title">犯罪別</div>
           <div class="quick-desc">詐欺・交通・判決など切り口別</div>
         </div>
       </a>
@@ -283,7 +296,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
           <span class="kpi-arrow" aria-hidden="true">→</span>
         </div>
         <div>
-          <div class="quick-title">統計・CSV</div>
+          <div class="quick-title">統計</div>
           <div class="quick-desc">クロス集計と属性別内訳</div>
         </div>
       </a>
@@ -338,12 +351,18 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
           ? html`<ul class="feed">
               ${recentCases.map((k) => {
                 const themes = k.themes ? k.themes.split(",").slice(0, 2) : [];
+                const act = caseActivityBadge(k.entry_count, k.latest_at, recentThreshold);
                 return html`<li class="feed-item">
                   <div class="feed-meta">
-                    <span class="pill pill-accent">${k.latest_stage}</span>
+                    <span class="pill ${stageBadgeClass(k.latest_stage)}">${k.latest_stage}</span>
+                    ${act.kind === "new"
+                      ? html`<span class="badge-new">${act.label}</span>`
+                      : act.kind === "update"
+                        ? html`<span class="badge-update">${act.label}</span>`
+                        : ""}
                     ${k.progress ? html`<span class="small muted">${k.progress}</span>` : ""}
                     <span>${k.prefecture ?? "場所不明"}</span>
-                    <span class="num">${formatDateShort(k.latest_at)}</span>
+                    <span class="num">${act.datePrefix} ${formatDateShort(k.latest_at)}</span>
                   </div>
                   <a class="feed-title" href="/cases/${encodeURIComponent(k.id)}">${k.title}</a>
                   ${themes.length
