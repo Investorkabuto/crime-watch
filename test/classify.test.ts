@@ -150,6 +150,8 @@ describe("第3波の罪名（0012）", () => {
     ["動物愛護法違反", "animal_welfare"],
     ["虚偽公文書作成", "forgery"],
     ["犯人隠避", "harboring"],
+    ["預託法違反", "deposit_transaction"],
+    ["旅券法違反", "passport"],
     ["児童買春・ポルノ禁止法違反（提供）", "child_porn"],
   ])("%s → %s", (raw, law) => {
     expect(classifyCharges([raw], aliases).every((c) => c.lawCode === law)).toBe(true);
