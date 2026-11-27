@@ -307,14 +307,20 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
     </section>
 
     <section class="bento-kpi mt-16">
-      <div class="kpi-card">
-        <div class="kpi-label">記録された事件数</div>
+      <a class="kpi-card" href="/cases?law=${encodeURIComponent(law.code)}">
+        <div class="kpi-head">
+          <span class="kpi-label">記録された事件数</span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
         <div class="kpi-value num">${totalCases.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">成人有期刑の判決数</div>
+      </a>
+      <a class="kpi-card" href="/cases?law=${encodeURIComponent(law.code)}&has_judgment=1">
+        <div class="kpi-head">
+          <span class="kpi-label">成人有期刑の判決数</span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
         <div class="kpi-value num">${custodialN.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
-      </div>
+      </a>
       <div class="kpi-card">
         <div class="kpi-label">執行猶予率</div>
         <div class="kpi-value num">${custodialN >= MIN_METRIC_N ? formatPct(suspendedRate) : "—"}</div>

@@ -182,15 +182,21 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
     </section>
 
     <section class="bento-kpi mt-16">
-      <div class="kpi-card">
-        <div class="kpi-label">記録された事件数</div>
+      <a class="kpi-card" href="/cases?theme=${encodeURIComponent(theme)}">
+        <div class="kpi-head">
+          <span class="kpi-label">記録された事件数</span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
         <div class="kpi-value num">${summary.total_cases.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
         <div class="kpi-sub">報道された事件の件数</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">うち判決あり</div>
+      </a>
+      <a class="kpi-card" href="/cases?theme=${encodeURIComponent(theme)}&has_judgment=1">
+        <div class="kpi-head">
+          <span class="kpi-label">うち判決あり</span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
         <div class="kpi-value num">${summary.with_judgment.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
-      </div>
+      </a>
       <div class="kpi-card">
         <div class="kpi-label">配信</div>
         <div style="margin-top:6px">
