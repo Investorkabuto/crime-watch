@@ -10,16 +10,27 @@ export async function reclassifyAll(db: D1Database): Promise<{ changed: number; 
   for (const table of ["report_charges", "judgment_charges"] as const) {
     const parent = table === "report_charges" ? "report_id" : "judgment_id";
     const { results } = await db
-      .prepare(`SELECT ${parent} AS pid, seq, charge_text FROM ${table}`)
-      .all<{ pid: string; seq: number; charge_text: string }>();
-    const stmts: D1PreparedStatement[] = [];
+      .prepare(`SELECT ${parent} AS pid, seq, charge_text, raw_text FROM ${table} ORDER BY ${parent}, seq`)
+      .all<{ pid: string; seq: number; charge_text: string; raw_text: string | null }>();
+    // 「虚偽公文書作成・行使」の「行使」のように前の罪状に頼る罪状があるので、Muse から受け取った元の文字列（raw_text）ごとに
+    // まとめて判定し直す。分け方が保存時と変わった場合だけ、1 件ずつ判定する
+    const groups = new Map<string, typeof results>();
     for (const r of results) {
-      const [hit] = classifyCharges([r.charge_text], dict.aliases);
-      stmts.push(
-        db
-          .prepare(`UPDATE ${table} SET law_code = ?, matched_alias = ? WHERE ${parent} = ? AND seq = ? AND law_code IS NOT ?`)
-          .bind(hit?.lawCode ?? null, hit?.matchedAlias ?? null, r.pid, r.seq, hit?.lawCode ?? null),
-      );
+      const key = `${r.pid}\u0000${r.raw_text ?? `\u0001${r.seq}`}`;
+      groups.set(key, [...(groups.get(key) ?? []), r]);
+    }
+    const stmts: D1PreparedStatement[] = [];
+    for (const rows of groups.values()) {
+      const raw = rows[0]!.raw_text;
+      const whole = raw ? classifyCharges([raw], dict.aliases) : [];
+      rows.forEach((r, i) => {
+        const hit = whole.length === rows.length ? whole[i] : classifyCharges([r.charge_text], dict.aliases)[0];
+        stmts.push(
+          db
+            .prepare(`UPDATE ${table} SET charge_text = ?, law_code = ?, matched_alias = ? WHERE ${parent} = ? AND seq = ? AND (law_code IS NOT ? OR charge_text IS NOT ?)`)
+            .bind(hit?.text ?? r.charge_text, hit?.lawCode ?? null, hit?.matchedAlias ?? null, r.pid, r.seq, hit?.lawCode ?? null, hit?.text ?? r.charge_text),
+        );
+      });
     }
     for (let i = 0; i < stmts.length; i += 100) {
       const res = await db.batch(stmts.slice(i, i + 100));
