@@ -13,6 +13,8 @@ import { PREF_EXPR, prefectureStats, type PrefBasis } from "./prefstats";
 import { nationalityStats } from "./natstats";
 import { recomputeThemes } from "./themes";
 import { listRejections } from "./rejections";
+import { recomputeAggregates } from "./aggregate";
+import { siteApp } from "./site/router";
 
 // D1 の 1 行あたりの上限（約 2MB）に収まるよう、原本の保存を考えて 1MB までにする
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -360,7 +362,16 @@ app.post("/api/v1/admin/aliases", async (c) => {
   return c.json({ ok: true, ...(await reclassifyAll(c.env.DB)) });
 });
 
-app.notFound((c) => c.json({ error: "not_found" }, 404));
+/** 公開サイト用の集計テーブルを再計算する（Cron と同じ処理） */
+app.post("/api/v1/admin/recompute-aggregates", async (c) => c.json(await recomputeAggregates(c.env.DB)));
+
+// ===== 公開サイト（SSR + SVG + RSS + sitemap）=====
+app.route("/", siteApp);
+
+app.notFound((c) => {
+  if (c.req.path.startsWith("/api/")) return c.json({ error: "not_found" }, 404);
+  return c.text("Not Found", 404);
+});
 
 // 想定外のエラー。テーブル未作成などの原因が送信側にも分かるように JSON で返す（詳細はログのみ）
 app.onError((err, c) => {
@@ -371,4 +382,9 @@ app.onError((err, c) => {
   return c.json({ error: "internal_error" }, 500);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(recomputeAggregates(env.DB));
+  },
+};

@@ -134,7 +134,7 @@ describe("第2波の罪名（0009）", () => {
   });
 });
 
-describe("第3波の罪名（0011）", () => {
+describe("第3波の罪名（0012）", () => {
   it.each([
     ["性的姿態等撮影", "sexual_image_recording"],
     ["性的姿態撮影処罰法撮影", "sexual_image_recording"],

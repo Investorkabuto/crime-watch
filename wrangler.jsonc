@@ -20,7 +20,10 @@
       "database_id": "611b307d-3181-405d-a5b7-012469657406",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["0 * * * *"]
+  }
   // 秘密情報（wrangler secret put で設定。リポジトリには書かない）:
   //   INGEST_TOKEN  : Muse が Authorization: Bearer に付けるトークン
   //   INGEST_HMAC_SECRET : 署名用の鍵
