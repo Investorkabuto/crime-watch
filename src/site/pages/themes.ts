@@ -141,8 +141,8 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
       .prepare(
         `SELECT c.id, c.title, c.prefecture, c.latest_stage, c.progress, c.latest_at
          FROM cases c
-         JOIN case_themes ct ON ct.case_id = c.id
-         WHERE c.status = 'published' AND ct.theme = ?
+         WHERE c.status = 'published'
+           AND EXISTS (SELECT 1 FROM case_themes ct WHERE ct.case_id = c.id AND ct.theme = ?)
          ORDER BY c.latest_at DESC
          LIMIT 20`,
       )

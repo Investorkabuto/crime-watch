@@ -160,56 +160,133 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
       page: p > 1 ? String(p) : undefined,
     })}`;
 
+  const activeChips: string[] = [];
+  if (q.q?.trim()) activeChips.push(`「${q.q.trim()}」`);
+  if (q.prefecture) {
+    const bLabel = q.pref_basis === "police" ? "捜査警察" : q.pref_basis === "court" ? "裁判所" : "発生地";
+    activeChips.push(`${q.prefecture}${q.pref_basis && q.pref_basis !== "occurrence" ? `(${bLabel})` : ""}`);
+  }
+  if (q.law) activeChips.push(laws.find((l) => l.code === q.law)?.name ?? q.law);
+  if (q.group) activeChips.push(q.group);
+  if (q.theme) activeChips.push(`#${q.theme}`);
+  if (q.progress) activeChips.push(q.progress);
+  if (q.from || q.to) activeChips.push(`${q.from ?? "…"} 〜 ${q.to ?? "…"}`);
+  if (q.has_judgment === "1") activeChips.push("判決あり");
+  if (q.juvenile === "1") activeChips.push("少年事件");
+  if (sort === "occurred") activeChips.push("発生日順");
+
+  const drawerBody = html`
+    <form method="get" action="/cases" class="drawer-form" role="search">
+      <div class="drawer-keyword-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
+        </svg>
+        <input
+          class="drawer-search-input"
+          type="search"
+          name="q"
+          value="${q.q ?? ""}"
+          placeholder="キーワード・罪状・事件名"
+          aria-label="キーワード・罪状"
+        />
+        <button class="btn btn-primary" type="submit" style="padding:8px 16px;border-radius:10px">検索</button>
+      </div>
+      <div class="drawer-grid">
+        <div class="drawer-field">
+          <label for="f-pref">都道府県</label>
+          <select id="f-pref" class="input" name="prefecture">
+            <option value="">すべて</option>
+            ${PREFECTURES.map(
+              (p) => html`<option value="${p}" ${q.prefecture === p ? "selected" : ""}>${p}</option>`,
+            )}
+            <option value="不明" ${q.prefecture === "不明" ? "selected" : ""}>不明</option>
+          </select>
+        </div>
+        <div class="drawer-field">
+          <label for="f-basis">都道府県の基準</label>
+          <select id="f-basis" class="input" name="pref_basis">
+            <option value="occurrence" ${!q.pref_basis || q.pref_basis === "occurrence" ? "selected" : ""}>発生地</option>
+            <option value="police" ${q.pref_basis === "police" ? "selected" : ""}>捜査警察</option>
+            <option value="court" ${q.pref_basis === "court" ? "selected" : ""}>裁判所</option>
+          </select>
+        </div>
+        <div class="drawer-field">
+          <label for="f-law">法律</label>
+          <select id="f-law" class="input" name="law">
+            <option value="">すべて</option>
+            ${laws.map((l) => html`<option value="${l.code}" ${q.law === l.code ? "selected" : ""}>${l.name}</option>`)}
+          </select>
+        </div>
+        <div class="drawer-field">
+          <label for="f-group">分類</label>
+          <select id="f-group" class="input" name="group">
+            <option value="">すべて</option>
+            ${groups.map((g) => html`<option value="${g}" ${q.group === g ? "selected" : ""}>${g}</option>`)}
+          </select>
+        </div>
+        <div class="drawer-field">
+          <label for="f-theme">テーマ</label>
+          <select id="f-theme" class="input" name="theme">
+            <option value="">すべて</option>
+            ${THEMES.map((t) => html`<option value="${t}" ${q.theme === t ? "selected" : ""}>${t}</option>`)}
+          </select>
+        </div>
+        <div class="drawer-field">
+          <label for="f-prog">進み具合</label>
+          <select id="f-prog" class="input" name="progress">
+            <option value="">すべて</option>
+            ${PROGRESS_OPTIONS.map((pr) => html`<option value="${pr}" ${q.progress === pr ? "selected" : ""}>${pr}</option>`)}
+          </select>
+        </div>
+        <div class="drawer-field">
+          <label for="f-from">開始日</label>
+          <input id="f-from" class="input" type="date" name="from" value="${q.from ?? ""}" />
+        </div>
+        <div class="drawer-field">
+          <label for="f-to">終了日</label>
+          <input id="f-to" class="input" type="date" name="to" value="${q.to ?? ""}" />
+        </div>
+        <div class="drawer-field">
+          <label for="f-sort">並べ替え</label>
+          <select id="f-sort" class="input" name="sort">
+            <option value="latest" ${sort === "latest" ? "selected" : ""}>最近動きがあった順</option>
+            <option value="occurred" ${sort === "occurred" ? "selected" : ""}>発生日順</option>
+          </select>
+        </div>
+      </div>
+      <div class="drawer-checks">
+        <label>
+          <input type="checkbox" name="has_judgment" value="1" ${q.has_judgment === "1" ? "checked" : ""} /> 判決ありのみ
+        </label>
+        <label>
+          <input type="checkbox" name="juvenile" value="1" ${q.juvenile === "1" ? "checked" : ""} /> 少年事件のみ
+        </label>
+      </div>
+      <div class="drawer-actions">
+        <a class="btn" href="/cases">条件をリセット</a>
+        <button class="btn btn-primary" type="submit">この条件で絞り込む</button>
+      </div>
+    </form>
+  `;
+
   const body = html`
     <h1 class="page-h1">事件一覧</h1>
     <p class="page-lead">報道・判決から記録された事件を条件で絞り込めます（該当 <strong class="num">${total.toLocaleString("ja-JP")}</strong> 件）。</p>
 
-    <section class="card">
-      <form method="get" action="/cases" class="filter-form">
-        <input class="input" type="search" name="q" value="${q.q ?? ""}" placeholder="キーワード・罪状" style="min-width:190px;flex:1" />
-        <select class="input" name="prefecture" aria-label="都道府県">
-          <option value="">すべての都道府県</option>
-          ${PREFECTURES.map(
-            (p) => html`<option value="${p}" ${q.prefecture === p ? "selected" : ""}>${p}</option>`,
-          )}
-          <option value="不明" ${q.prefecture === "不明" ? "selected" : ""}>不明</option>
-        </select>
-        <select class="input" name="pref_basis" aria-label="都道府県の基準">
-          <option value="occurrence" ${!q.pref_basis || q.pref_basis === "occurrence" ? "selected" : ""}>発生地</option>
-          <option value="police" ${q.pref_basis === "police" ? "selected" : ""}>捜査警察</option>
-          <option value="court" ${q.pref_basis === "court" ? "selected" : ""}>裁判所</option>
-        </select>
-        <select class="input" name="law" aria-label="法律">
-          <option value="">すべての法律</option>
-          ${laws.map((l) => html`<option value="${l.code}" ${q.law === l.code ? "selected" : ""}>${l.name}</option>`)}
-        </select>
-        <select class="input" name="group" aria-label="分類">
-          <option value="">すべての分類</option>
-          ${groups.map((g) => html`<option value="${g}" ${q.group === g ? "selected" : ""}>${g}</option>`)}
-        </select>
-        <select class="input" name="theme" aria-label="テーマ">
-          <option value="">すべてのテーマ</option>
-          ${THEMES.map((t) => html`<option value="${t}" ${q.theme === t ? "selected" : ""}>${t}</option>`)}
-        </select>
-        <select class="input" name="progress" aria-label="進み具合">
-          <option value="">すべての進み具合</option>
-          ${PROGRESS_OPTIONS.map((pr) => html`<option value="${pr}" ${q.progress === pr ? "selected" : ""}>${pr}</option>`)}
-        </select>
-        <input class="input" type="date" name="from" value="${q.from ?? ""}" aria-label="開始日" />
-        <input class="input" type="date" name="to" value="${q.to ?? ""}" aria-label="終了日" />
-        <select class="input" name="sort" aria-label="並べ替え">
-          <option value="latest" ${sort === "latest" ? "selected" : ""}>最近動きがあった順</option>
-          <option value="occurred" ${sort === "occurred" ? "selected" : ""}>発生日順</option>
-        </select>
-        <label class="small" style="display:inline-flex;align-items:center;gap:4px">
-          <input type="checkbox" name="has_judgment" value="1" ${q.has_judgment === "1" ? "checked" : ""} /> 判決ありのみ
-        </label>
-        <label class="small" style="display:inline-flex;align-items:center;gap:4px">
-          <input type="checkbox" name="juvenile" value="1" ${q.juvenile === "1" ? "checked" : ""} /> 少年事件のみ
-        </label>
-        <button class="btn btn-primary" type="submit">絞り込む</button>
-        <a class="btn" href="/cases">条件をリセット</a>
-      </form>
+    <section class="card filter-bar">
+      <button type="button" class="filter-bar-btn" data-open-search>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
+        </svg>
+        <span>検索・詳細絞り込み</span>
+        ${activeChips.length > 0 ? html`<span class="search-badge num">${activeChips.length}</span>` : ""}
+      </button>
+      ${activeChips.length > 0
+        ? html`<div class="pills">
+            ${activeChips.map((chip) => html`<span class="pill pill-accent">${chip}</span>`)}
+            <a class="pill" href="/cases">リセット</a>
+          </div>`
+        : html`<span class="small muted">キーワード・都道府県・法律・テーマ・期間で絞り込めます</span>`}
     </section>
 
     <section class="card mt-16">
@@ -255,6 +332,9 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
       canonicalPath: "/cases",
       origin,
       searchQuery: q.q,
+      drawerTitle: "事件を検索・絞り込み",
+      drawerBody,
+      activeFilterCount: activeChips.length,
       body,
     }),
   );
@@ -599,8 +679,9 @@ export async function renderCaseDetailPage(c: Context<{ Bindings: Env }>) {
       db
         .prepare(
           `SELECT c.id, c.title, c.prefecture, c.latest_stage, c.latest_at
-           FROM cases c JOIN case_themes ct ON ct.case_id = c.id
-           WHERE c.status = 'published' AND c.id <> ? AND ct.theme = ?
+           FROM cases c
+           WHERE c.status = 'published' AND c.id <> ?
+             AND EXISTS (SELECT 1 FROM case_themes ct WHERE ct.case_id = c.id AND ct.theme = ?)
            ORDER BY c.latest_at DESC LIMIT 4`,
         )
         .bind(kase.id, themeNames[0]),

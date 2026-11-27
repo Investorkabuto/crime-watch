@@ -100,6 +100,50 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
   if (q.prefecture) csvParams.set("prefecture", q.prefecture);
   const csvHref = `/stats/export.csv${csvParams.toString() ? `?${csvParams.toString()}` : ""}`;
 
+  const activeChips: string[] = [];
+  if (q.from || q.to) activeChips.push(`${q.from ?? "…"} 〜 ${q.to ?? "…"}`);
+  if (q.law) activeChips.push(lawsListRes.results.find((l) => l.code === q.law)?.name ?? q.law);
+  if (q.prefecture) activeChips.push(q.prefecture);
+
+  const drawerBody = html`
+    <form method="get" action="/stats" class="drawer-form">
+      <div class="drawer-grid">
+        <div class="drawer-field">
+          <label for="s-from">開始日</label>
+          <input id="s-from" class="input" type="date" name="from" value="${q.from ?? ""}" />
+        </div>
+        <div class="drawer-field">
+          <label for="s-to">終了日</label>
+          <input id="s-to" class="input" type="date" name="to" value="${q.to ?? ""}" />
+        </div>
+        <div class="drawer-field">
+          <label for="s-law">法律</label>
+          <select id="s-law" class="input" name="law">
+            <option value="">すべての法律</option>
+            ${lawsListRes.results.map(
+              (l) => html`<option value="${l.code}" ${q.law === l.code ? "selected" : ""}>${l.name}</option>`,
+            )}
+          </select>
+        </div>
+        <div class="drawer-field">
+          <label for="s-pref">都道府県</label>
+          <select id="s-pref" class="input" name="prefecture">
+            <option value="">すべての都道府県</option>
+            ${PREFECTURES.map(
+              (p) => html`<option value="${p}" ${q.prefecture === p ? "selected" : ""}>${p}</option>`,
+            )}
+            <option value="不明" ${q.prefecture === "不明" ? "selected" : ""}>不明</option>
+          </select>
+        </div>
+      </div>
+      <div class="drawer-actions">
+        <a class="btn" href="/stats">リセット</a>
+        <a class="btn" href="${csvHref}">CSV ダウンロード</a>
+        <button class="btn btn-primary" type="submit">この条件で集計</button>
+      </div>
+    </form>
+  `;
+
   const body = html`
     <h1 class="page-h1">統計</h1>
     <p class="page-lead">
@@ -113,27 +157,21 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
       にもとづきます。
     </div>
 
-    <section class="card">
-      <form method="get" action="/stats" class="filter-form">
-        <input class="input" type="date" name="from" value="${q.from ?? ""}" aria-label="開始日" />
-        <input class="input" type="date" name="to" value="${q.to ?? ""}" aria-label="終了日" />
-        <select class="input" name="law" aria-label="法律">
-          <option value="">すべての法律</option>
-          ${lawsListRes.results.map(
-            (l) => html`<option value="${l.code}" ${q.law === l.code ? "selected" : ""}>${l.name}</option>`,
-          )}
-        </select>
-        <select class="input" name="prefecture" aria-label="都道府県">
-          <option value="">すべての都道府県</option>
-          ${PREFECTURES.map(
-            (p) => html`<option value="${p}" ${q.prefecture === p ? "selected" : ""}>${p}</option>`,
-          )}
-          <option value="不明" ${q.prefecture === "不明" ? "selected" : ""}>不明</option>
-        </select>
-        <button class="btn btn-primary" type="submit">集計する</button>
-        <a class="btn" href="/stats">リセット</a>
-        <a class="btn" href="${csvHref}">CSV ダウンロード</a>
-      </form>
+    <section class="card filter-bar">
+      <button type="button" class="filter-bar-btn" data-open-search>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+        </svg>
+        <span>集計条件を絞り込む</span>
+        ${activeChips.length > 0 ? html`<span class="search-badge num">${activeChips.length}</span>` : ""}
+      </button>
+      ${activeChips.length > 0
+        ? html`<div class="pills">
+            ${activeChips.map((chip) => html`<span class="pill pill-accent">${chip}</span>`)}
+            <a class="pill" href="/stats">リセット</a>
+          </div>`
+        : html`<span class="small muted">期間・法律・都道府県で絞り込めます</span>`}
+      <a class="btn" href="${csvHref}" style="margin-left:auto">CSV ダウンロード</a>
     </section>
 
     <section class="card mt-16">
@@ -259,6 +297,9 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
       activeNav: "stats",
       canonicalPath: "/stats",
       origin,
+      drawerTitle: "統計の集計条件を絞り込む",
+      drawerBody,
+      activeFilterCount: activeChips.length,
       body,
     }),
   );

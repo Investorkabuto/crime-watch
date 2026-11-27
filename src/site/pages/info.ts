@@ -26,7 +26,7 @@ export function renderAboutPage(c: Context<{ Bindings: Env }>) {
 
       <h2 class="card-title mt-16">データの収集と AI の誤りについて</h2>
       <p style="color:var(--text-sub);margin:0 0 16px">
-        データは AI（Muse）が公開されているニュース報道などから自動で構造化し、本アプリが罪状から法律を自動分類して公開しています。
+        データは AI が公開されているニュース報道などから自動で構造化し、本アプリが罪状から法律を自動分類して公開しています。
         自動処理の性質上、誤りや最新の続報とのずれを含む場合があります。必ず各ページの出典記事をご確認ください。
       </p>
 
