@@ -525,6 +525,31 @@ a.kpi-card:hover {
   padding-top: 10px; color: var(--text-sub); white-space: pre-line; font-size: 13px; line-height: 1.75;
 }
 
+/* Compact statutory penalty row & visual demographic sentencing rows */
+.penalty-strip {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+  padding: 10px 13px; border-radius: 12px; background: var(--surface-subtle); border: 1px solid var(--line);
+  font-size: 13px; margin-bottom: 10px;
+}
+.demo-sent-list { display: flex; flex-direction: column; gap: 10px; }
+.demo-sent-row {
+  display: grid; grid-template-columns: 96px minmax(0, 1fr) 92px; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 12px; background: var(--surface-subtle); border: 1px solid var(--line);
+}
+.demo-sent-label { font-size: 13.5px; font-weight: 700; color: var(--text); line-height: 1.3; }
+.demo-sent-count { font-size: 11.5px; color: var(--muted); font-weight: 500; display: block; }
+.demo-sent-bar {
+  display: flex; height: 26px; border-radius: 8px; overflow: hidden; background: var(--track);
+}
+.demo-sent-seg {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; padding: 0 5px;
+}
+.demo-sent-muted { font-size: 12px; color: var(--muted); }
+.demo-sent-ratio { text-align: right; line-height: 1.25; }
+.demo-sent-ratio strong { font-size: 14px; color: var(--text); }
+.demo-sent-ci { font-size: 10.5px; color: var(--muted); display: block; }
+
 /* Stage / presumption badge */
 .presumption-box {
   display: inline-flex; align-items: center; gap: 6px;
@@ -687,6 +712,9 @@ dl.kv dd { margin: 0; color: var(--text); }
   .bar-card-val { font-size: 14.5px; }
   .nat-row { grid-template-columns: 88px minmax(0, 1fr) 44px; gap: 8px; padding: 5px 4px; }
   .nat-label, .nat-count { font-size: 12.5px; }
+  .demo-sent-row { grid-template-columns: 74px minmax(0, 1fr) 74px; gap: 8px; padding: 9px 10px; }
+  .demo-sent-label { font-size: 12.5px; }
+  .demo-sent-ratio strong { font-size: 13px; }
   .page-h1 { font-size: 20px; }
   .hide-sm { display: none; }
   .drawer-grid { grid-template-columns: 1fr 1fr; }

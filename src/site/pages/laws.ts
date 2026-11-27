@@ -305,74 +305,133 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
   }[];
 
   const chart = renderMonthlyBarChart(monthly.slice(-12));
-  const egovSearchUrl = `https://laws.e-gov.go.jp/search/elawsSearch/elaws_search/lsg0500/search?lawTitle=${encodeURIComponent(law.law_name.replace(/[0-9０-９条]+.*$/, ""))}`;
   const canonicalPath = `/laws/${encodeURIComponent(law.code)}`;
   const lawText = LAW_TEXTS[law.code];
+  const pastPeriods = periods.filter((p) => p !== currentPeriod);
+
+  const renderDemoRows = (
+    rows: {
+      label: string;
+      n: number;
+      ratioCi: { mean: number; low: number; high: number } | null;
+      suspendedRate: number | null;
+    }[],
+  ) => {
+    if (!rows.length) return html`<p class="muted small mb-0">データがありません。</p>`;
+    return html`<div class="demo-sent-list">
+      ${rows.map((g) => {
+        const suspPct = g.suspendedRate != null ? Math.round(g.suspendedRate * 100) : null;
+        const prisonPct = suspPct != null ? 100 - suspPct : null;
+        return html`<div class="demo-sent-row">
+          <div class="demo-sent-label">
+            ${g.label}
+            <span class="demo-sent-count num">${g.n.toLocaleString("ja-JP")}件</span>
+          </div>
+          <div>
+            ${suspPct != null && prisonPct != null
+              ? html`<div class="demo-sent-bar" aria-label="実刑 ${prisonPct}% 執行猶予 ${suspPct}%">
+                  ${prisonPct > 0
+                    ? html`<span class="demo-sent-seg" style="width:${prisonPct}%;background:var(--accent)"
+                        >${prisonPct >= 22 ? `実刑 ${prisonPct}%` : ""}</span
+                      >`
+                    : ""}
+                  ${suspPct > 0
+                    ? html`<span class="demo-sent-seg" style="width:${suspPct}%;background:#38bdf8"
+                        >${suspPct >= 22 ? `猶予 ${suspPct}%` : ""}</span
+                      >`
+                    : ""}
+                </div>`
+              : html`<div class="demo-sent-muted">${MIN_METRIC_N}件未満のため件数のみ表示</div>`}
+          </div>
+          <div class="demo-sent-ratio num">
+            ${g.ratioCi
+              ? html`<strong>${formatPct(g.ratioCi.mean)}</strong>
+                  <span class="demo-sent-ci">(${formatPct(g.ratioCi.low)}〜${formatPct(g.ratioCi.high)})</span>`
+              : html`<span class="muted">—</span>`}
+          </div>
+        </div>`;
+      })}
+    </div>`;
+  };
+
+  const demoTabScript = `
+(() => {
+  const btns = document.querySelectorAll("[data-demo-tab]");
+  const panels = document.querySelectorAll("[data-demo-panel]");
+  btns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.demoTab;
+      btns.forEach((b) => b.classList.toggle("is-active", b === btn));
+      panels.forEach((p) => { p.style.display = p.dataset.demoPanel === target ? "" : "none"; });
+    });
+  });
+})();
+`;
 
   const body = html`
     <section class="card">
-      <div class="pills" style="margin-bottom:8px">
-        <a class="pill" href="/laws">法律一覧</a>
-        <span class="pill">${law.category}</span>
-        <span class="pill">${law.group_name}</span>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px;font-size:12.5px" class="muted">
+        <a href="/laws" style="font-weight:600">← 法律一覧</a>
+        <span>·</span>
+        <span>${law.category} · ${law.group_name}</span>
       </div>
-      <h1 class="page-h1">${law.name}</h1>
-      <p class="page-lead mb-0">
-        根拠条文: ${law.law_name} ／
-        <a href="${egovSearchUrl}" target="_blank" rel="noopener noreferrer">e-Gov 法令検索で見る</a>
-      </p>
+
+      <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 10px;margin-bottom:10px">
+        <h1 class="page-h1 mb-0">${law.name}</h1>
+        <span class="pill">${law.law_name}</span>
+      </div>
 
       ${lawText
-        ? html`<hr class="divider" />
-            <div style="margin-bottom:12px">
-              <div class="small muted" style="font-weight:700;margin-bottom:4px">わかりやすい要約</div>
-              <p style="margin:0;color:var(--text);font-size:14.5px;line-height:1.7">${lawText.summary}</p>
+        ? html`<p style="margin:0 0 12px;color:var(--text);font-size:14.5px;line-height:1.7">${lawText.summary}</p>`
+        : ""}
+
+      ${currentPeriod
+        ? html`<div class="penalty-strip">
+            <div>
+              <span class="muted small">現行法定刑: </span>
+              <strong>${currentPeriod.statutory_penalty}</strong>
+              ${currentPeriod.verified === 0 ? html` <span class="pill">確認中</span>` : ""}
             </div>
-            <details class="article-details">
+            <span class="small muted num">${formatDateJa(currentPeriod.effective_from)}〜</span>
+          </div>`
+        : ""}
+
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${lawText
+          ? html`<details class="article-details">
               <summary class="article-summary">条文全文を見る（${lawText.articleTitle}）</summary>
               <div class="article-body">${lawText.articleText}</div>
             </details>`
-        : ""}
-
-      ${periods.length
-        ? html`<hr class="divider" />
-            <h2 class="card-title" style="margin-bottom:8px">法定刑（施行時期ごと）</h2>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>適用期間</th>
-                    <th>法定刑</th>
-                    <th>確認状態</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${periods.map(
-                    (p) => html`<tr>
-                      <td class="num small">
-                        ${formatDateJa(p.effective_from)} 〜 ${p.effective_to ? `${formatDateJa(p.effective_to)}前日` : "現行"}
-                      </td>
-                      <td>${p.statutory_penalty}</td>
-                      <td class="small muted">${p.verified ? "確認済み" : "確認中"}</td>
-                    </tr>`,
-                  )}
-                </tbody>
-              </table>
-            </div>`
-        : ""}
+          : ""}
+        ${pastPeriods.length
+          ? html`<details class="article-details">
+              <summary class="article-summary">過去の法定刑・改正履歴を見る（${pastPeriods.length}件）</summary>
+              <div class="article-body">
+                ${pastPeriods.map(
+                  (p) => html`<div style="margin-bottom:6px">
+                    <span class="num small muted"
+                      >${formatDateJa(p.effective_from)} 〜 ${p.effective_to ? `${formatDateJa(p.effective_to)}前日` : "現行"}</span
+                    ><br />
+                    <strong>${p.statutory_penalty}</strong>
+                  </div>`,
+                )}
+              </div>
+            </details>`
+          : ""}
+      </div>
     </section>
 
     <section class="bento-kpi mt-16">
       <a class="kpi-card" href="/cases?law=${encodeURIComponent(law.code)}">
         <div class="kpi-head">
-          <span class="kpi-label">記録された事件数</span>
+          <span class="kpi-label">事件数</span>
           <span class="kpi-arrow" aria-hidden="true">→</span>
         </div>
         <div class="kpi-value num">${totalCases.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
       </a>
       <a class="kpi-card" href="/cases?law=${encodeURIComponent(law.code)}&has_judgment=1">
         <div class="kpi-head">
-          <span class="kpi-label">成人有期刑の判決数</span>
+          <span class="kpi-label">有期刑判決</span>
           <span class="kpi-arrow" aria-hidden="true">→</span>
         </div>
         <div class="kpi-value num">${custodialN.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
@@ -380,52 +439,35 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
       <div class="kpi-card">
         <div class="kpi-label">執行猶予率</div>
         <div class="kpi-value num">${custodialN >= MIN_METRIC_N ? formatPct(suspendedRate) : "—"}</div>
-        <div class="kpi-sub">${custodialN < MIN_METRIC_N ? `件数 ${MIN_METRIC_N} 件未満のため非表示` : `n=${custodialN}`}</div>
+        <div class="kpi-sub">${custodialN < MIN_METRIC_N ? `${MIN_METRIC_N}件未満非表示` : `n=${custodialN}`}</div>
       </div>
     </section>
 
     ${distChart
       ? html`<section class="card">
           <h2 class="card-title">
-            <span>量刑の分布（法定刑の範囲内・${judgAttrs.length}件）</span>
+            <span>量刑の分布（${judgAttrs.length}件）</span>
             <span class="chart-legend" aria-hidden="true">
               <span class="chart-legend-item"
-                ><span class="chart-dot" style="border-radius:50%;background:var(--accent)"></span>実刑</span
+                ><span class="chart-dot" style="background:var(--accent)"></span>実刑</span
               >
               <span class="chart-legend-item"
-                ><span
-                  class="chart-dot"
-                  style="border-radius:50%;background:var(--surface-solid);border:2px solid #38bdf8"
-                ></span
-                >執行猶予</span
+                ><span class="chart-dot" style="background:#38bdf8"></span>執行猶予</span
               >
             </span>
           </h2>
-          ${currentPeriod?.statutory_penalty
-            ? html`<p class="small muted" style="margin:-6px 0 10px">現行法定刑: ${currentPeriod.statutory_penalty}</p>`
+          ${distRow && distRow.n >= MIN_METRIC_N
+            ? html`<div class="pills" style="margin:-4px 0 10px">
+                <span class="pill num">中央値 <strong>${formatMonths(Math.round(distRow.median_months ?? 0))}</strong></span>
+                <span class="pill num"
+                  >25〜75%: ${formatMonths(Math.round(distRow.p25_months ?? 0))}〜${formatMonths(Math.round(distRow.p75_months ?? 0))}</span
+                >
+                ${distRow.n_ratio_to_demand >= MIN_METRIC_N
+                  ? html`<span class="pill num">求刑比平均 ${formatPct(distRow.avg_ratio_to_demand)}</span>`
+                  : ""}
+              </div>`
             : ""}
           ${distChart}
-        </section>`
-      : ""}
-
-    ${distRow && distRow.n >= MIN_METRIC_N
-      ? html`<section class="card">
-          <h2 class="card-title">
-            <span>刑期の分布（成人・有期刑・n=${distRow.n}）</span>
-            <a class="small" href="/about/metrics">指標について →</a>
-          </h2>
-          <dl class="kv">
-            <dt>最小 〜 最大</dt>
-            <dd class="num">${formatMonths(Math.round(distRow.min_months ?? 0))} 〜 ${formatMonths(Math.round(distRow.max_months ?? 0))}</dd>
-            <dt>四分位（25% / 中央値 / 75%）</dt>
-            <dd class="num">
-              ${formatMonths(Math.round(distRow.p25_months ?? 0))} ／
-              <strong>${formatMonths(Math.round(distRow.median_months ?? 0))}</strong> ／
-              ${formatMonths(Math.round(distRow.p75_months ?? 0))}
-            </dd>
-            <dt>求刑比の平均</dt>
-            <dd class="num">${distRow.n_ratio_to_demand >= MIN_METRIC_N ? `${formatPct(distRow.avg_ratio_to_demand)}（n=${distRow.n_ratio_to_demand}）` : `件数 ${MIN_METRIC_N} 件未満のため非表示`}</dd>
-          </dl>
         </section>`
       : ""}
 
@@ -437,69 +479,23 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
       : ""}
 
     <section class="card mt-16">
-      <h2 class="card-title">
-        <span>属性別の量刑集計（成人・有期刑）</span>
-        <a class="small" href="/about/metrics">この数字について →</a>
-      </h2>
-      <p class="small muted" style="margin:-6px 0 12px">
-        件数が ${MIN_METRIC_N} 件未満の区分は平均値・割合を表示しません。報道された判決にもとづく数値であり、前科・示談などの事情は補正していません。
-      </p>
-      <div class="bento-equal" style="margin-top:0">
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>性別</th>
-                <th class="num">件数</th>
-                <th class="num">求刑比平均（95%CI）</th>
-                <th class="num">執行猶予率</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${genderGroups.map(
-                (g) => html`<tr>
-                  <td>${g.label}</td>
-                  <td class="num">${g.n}</td>
-                  <td class="num">
-                    ${g.ratioCi
-                      ? `${formatPct(g.ratioCi.mean)} (${formatPct(g.ratioCi.low)}〜${formatPct(g.ratioCi.high)})`
-                      : "—"}
-                  </td>
-                  <td class="num">${g.suspendedRate != null ? formatPct(g.suspendedRate) : "—"}</td>
-                </tr>`,
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>年代</th>
-                <th class="num">件数</th>
-                <th class="num">求刑比平均（95%CI）</th>
-                <th class="num">執行猶予率</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${ageGroups.length
-                ? ageGroups.map(
-                    (g) => html`<tr>
-                      <td>${g.label}</td>
-                      <td class="num">${g.n}</td>
-                      <td class="num">
-                        ${g.ratioCi
-                          ? `${formatPct(g.ratioCi.mean)} (${formatPct(g.ratioCi.low)}〜${formatPct(g.ratioCi.high)})`
-                          : "—"}
-                      </td>
-                      <td class="num">${g.suspendedRate != null ? formatPct(g.suspendedRate) : "—"}</td>
-                    </tr>`,
-                  )
-                : html`<tr><td colspan="4" class="muted small">データがありません。</td></tr>`}
-            </tbody>
-          </table>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+        <h2 class="card-title mb-0">属性別の量刑傾向</h2>
+        <div class="segmented" role="tablist" aria-label="属性の切替">
+          <button type="button" class="is-active" data-demo-tab="gender">性別</button>
+          <button type="button" data-demo-tab="age">年代</button>
         </div>
       </div>
+      <div class="chart-legend" style="margin-bottom:10px" aria-hidden="true">
+        <span class="chart-legend-item"><span class="chart-dot" style="background:var(--accent)"></span>実刑</span>
+        <span class="chart-legend-item"><span class="chart-dot" style="background:#38bdf8"></span>執行猶予</span>
+        <span class="chart-legend-item">右列: 求刑比（判決÷求刑）</span>
+      </div>
+      <div data-demo-panel="gender">${renderDemoRows(genderGroups)}</div>
+      <div data-demo-panel="age" style="display:none">${renderDemoRows(ageGroups)}</div>
+      <p class="small muted mb-0 mt-12">
+        ※ 報道された成人有期刑の集計（前科・示談等の事情は未補正）。
+      </p>
     </section>
 
     <section class="card mt-16">
@@ -522,6 +518,10 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
           </ul>`
         : html`<p class="muted small mb-0">該当する事件はまだありません。</p>`}
     </section>
+
+    <script>
+      ${raw(demoTabScript)}
+    </script>
   `;
 
   return c.html(

@@ -238,7 +238,7 @@ export function renderStackedMonthlyBarChart(series: { month: string; cases: num
   );
 }
 
-/** 法律別の量刑分布グラフ SVG（法定刑の範囲内に各判決の刑期をドット分布＋四分位帯で表示） */
+/** 法律別の量刑分布グラフ SVG（〜40件: 個別ドット分布 / 41件以上: 積み上げヒストグラムへ自動切替） */
 export function renderSentencingDistributionChart(input: {
   statMinMonths: number | null;
   statMaxMonths: number | null;
@@ -256,15 +256,101 @@ export function renderSentencingDistributionChart(input: {
   const span = Math.max(1, maxM - minM);
 
   const W = 600;
-  const H = 136;
-  const padL = 28;
-  const padR = 28;
+  const padL = 34;
+  const padR = 24;
   const plotW = W - padL - padR;
-  const axisY = 92;
-
   const xOf = (m: number) => Math.round((padL + Math.max(0, Math.min(1, (m - minM) / span)) * plotW) * 10) / 10;
 
-  // 法定刑の範囲ハイライト
+  // 41件以上: 積み上げヒストグラム（数百〜数千件でも崩れず分布が一目瞭然）
+  if (input.points.length > 40) {
+    const H = 196;
+    const padT = 26;
+    const padB = 30;
+    const plotH = H - padT - padB;
+    const binsCount = 10;
+    const binW = span / binsCount;
+    const bins = Array.from({ length: binsCount }, (_, i) => ({
+      start: minM + i * binW,
+      end: minM + (i + 1) * binW,
+      prison: 0,
+      suspended: 0,
+    }));
+    for (const pt of input.points) {
+      const idx = Math.min(binsCount - 1, Math.max(0, Math.floor((pt.termMonths - minM) / binW)));
+      if (pt.isSuspended) bins[idx]!.suspended += 1;
+      else bins[idx]!.prison += 1;
+    }
+    const maxBin = Math.max(1, ...bins.map((b) => b.prison + b.suspended));
+
+    const gridLines = [0.5, 1]
+      .map((r) => {
+        const y = Math.round((padT + plotH * (1 - r)) * 10) / 10;
+        const val = Math.round(maxBin * r);
+        return (
+          `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--line)" stroke-width="1" stroke-dasharray="3 3" />` +
+          `<text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="10" fill="var(--muted)">${val}</text>`
+        );
+      })
+      .join("");
+
+    let bandMarkup = "";
+    if (input.p25Months != null && input.p75Months != null) {
+      const x25 = xOf(input.p25Months);
+      const x75 = xOf(input.p75Months);
+      bandMarkup += `<rect x="${x25}" y="${padT}" width="${Math.max(4, x75 - x25)}" height="${plotH}" fill="var(--dist-band)" />`;
+    }
+    if (input.medianMonths != null) {
+      const xm = xOf(input.medianMonths);
+      bandMarkup +=
+        `<line x1="${xm}" y1="${padT}" x2="${xm}" y2="${padT + plotH}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 3" />` +
+        `<text x="${xm}" y="16" text-anchor="${xm > W - 80 ? "end" : xm < 80 ? "start" : "middle"}" font-size="11" font-weight="700" fill="var(--accent)">中央値 ${escXml(formatMonths(Math.round(input.medianMonths)) ?? "")}</text>`;
+    }
+
+    const stepW = plotW / binsCount;
+    const barW = Math.max(12, stepW * 0.68);
+    const bars = bins
+      .map((b, i) => {
+        const total = b.prison + b.suspended;
+        const x = Math.round((padL + i * stepW + (stepW - barW) / 2) * 10) / 10;
+        const pH = b.prison > 0 ? Math.max(2, Math.round((b.prison / maxBin) * plotH)) : 0;
+        const sH = b.suspended > 0 ? Math.max(2, Math.round((b.suspended / maxBin) * plotH)) : 0;
+        const pY = padT + plotH - pH;
+        const sY = pY - sH;
+        const rangeLabel = `${formatMonths(Math.round(b.start)) ?? ""}〜${formatMonths(Math.round(b.end)) ?? ""}`;
+        return (
+          `<g>` +
+          `<title>${escXml(rangeLabel)}: 実刑 ${b.prison}件 / 執行猶予 ${b.suspended}件（計 ${total}件）</title>` +
+          (pH > 0 ? `<rect x="${x}" y="${pY}" width="${barW}" height="${pH}" rx="${sH > 0 ? 2 : 4}" fill="var(--accent)" opacity="0.88" />` : "") +
+          (sH > 0 ? `<rect x="${x}" y="${sY}" width="${barW}" height="${sH}" rx="4" fill="#38bdf8" opacity="0.92" />` : "") +
+          `</g>`
+        );
+      })
+      .join("");
+
+    const midM = Math.round(minM + span / 2);
+    const ticks = [
+      { x: padL, anchor: "start", text: formatMonths(Math.round(minM)) ?? "" },
+      { x: Math.round((padL + plotW / 2) * 10) / 10, anchor: "middle", text: formatMonths(midM) ?? "" },
+      { x: W - padR, anchor: "end", text: formatMonths(Math.round(maxM)) ?? "" },
+    ]
+      .map((tk) => `<text x="${tk.x}" y="${H - 8}" text-anchor="${tk.anchor}" font-size="11" fill="var(--muted)">${escXml(tk.text)}</text>`)
+      .join("");
+
+    return raw(
+      `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="法定刑の範囲内における量刑分布グラフ" style="display:block;height:auto">` +
+        bandMarkup +
+        gridLines +
+        `<line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="var(--line-strong)" stroke-width="1" />` +
+        bars +
+        ticks +
+        `</svg>`,
+    );
+  }
+
+  // 〜40件: 個別ドット分布（1件ずつの実刑●/執行猶予○を直感的に表示）
+  const H = 136;
+  const axisY = 92;
+
   let statBand = "";
   if (input.statMinMonths != null && input.statMaxMonths != null && input.statMaxMonths > input.statMinMonths) {
     const sx1 = xOf(input.statMinMonths);
@@ -274,7 +360,6 @@ export function renderSentencingDistributionChart(input: {
     statBand = `<rect x="${padL}" y="${axisY - 6}" width="${plotW}" height="12" rx="6" fill="var(--track)" stroke="var(--line)" stroke-width="1" />`;
   }
 
-  // 四分位帯（25%〜75%）と中央値
   let iqrMarkup = "";
   if (input.p25Months != null && input.p75Months != null && input.points.length >= 4) {
     const x25 = xOf(input.p25Months);
@@ -288,7 +373,6 @@ export function renderSentencingDistributionChart(input: {
       `<text x="${xm}" y="20" text-anchor="${xm > W - 80 ? "end" : xm < 80 ? "start" : "middle"}" font-size="11" font-weight="700" fill="var(--accent)">中央値 ${escXml(formatMonths(Math.round(input.medianMonths)) ?? "")}</text>`;
   }
 
-  // 近い刑期のドットを縦に少しずつ積んで重なりを見える化（ビーズウォーム風）
   const sorted = [...input.points].sort((a, b) => a.termMonths - b.termMonths);
   const bucketCounts = new Map<number, number>();
   const dots = sorted
@@ -305,7 +389,6 @@ export function renderSentencingDistributionChart(input: {
     })
     .join("");
 
-  // 目盛りラベル（下限・中央・上限）
   const midM = Math.round(minM + span / 2);
   const ticks = [
     { x: padL, anchor: "start", text: formatMonths(Math.round(minM)) ?? "" },

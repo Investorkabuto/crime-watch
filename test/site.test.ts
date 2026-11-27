@@ -187,9 +187,13 @@ describe("公開サイト（S1 + S2）", () => {
     const lawDetail = await view("/laws/robbery_injury");
     expect(lawDetail.status).toBe(200);
     const lawDetailHtml = await lawDetail.text();
-    expect(lawDetailHtml).toContain("件数 20 件未満のため非表示");
-    expect(lawDetailHtml).toContain("わかりやすい要約");
+    expect(lawDetailHtml).toContain("20件未満非表示");
+    expect(lawDetailHtml).not.toContain("e-Gov");
+    expect(lawDetailHtml).not.toContain("根拠条文:");
     expect(lawDetailHtml).toContain("刑法 第240条前段");
+    expect(lawDetailHtml).toContain("属性別の量刑傾向");
+    expect(lawDetailHtml).toContain('data-demo-tab="gender"');
+    expect(lawDetailHtml).toContain('data-demo-tab="age"');
 
     const prefsRes = await view("/prefectures");
     expect(prefsRes.status).toBe(200);
@@ -329,7 +333,7 @@ describe("公開サイト（S1 + S2）", () => {
     const lawDetailHtml = await (await view("/laws/robbery_injury")).text();
     expect(lawDetailHtml).toContain('class="article-details"');
     expect(lawDetailHtml).toContain("条文全文を見る");
-    expect(lawDetailHtml).toContain("量刑の分布（法定刑の範囲内");
+    expect(lawDetailHtml).toContain("量刑の分布（1件）");
     expect(lawDetailHtml).toContain("法定刑の範囲内における量刑分布グラフ");
 
     // 都道府県ページにリアル日本地図 SVG と地域ズーム・地図外ドック・テーブル併用があること
