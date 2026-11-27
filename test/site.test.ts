@@ -290,6 +290,14 @@ describe("公開サイト（S1 + S2）", () => {
     const themeHtml = await (await view(`/themes/${encodeURIComponent("強盗")}`)).text();
     const matches = themeHtml.match(/強盗致傷事件で被告に拘禁刑9年の判決/g) ?? [];
     expect(matches.length).toBe(1);
+    expect(themeHtml).toContain("bento-kpi-2");
+    expect(themeHtml).toContain("hbar-list");
+    expect(themeHtml).toContain("ratio-bar");
+    expect(themeHtml).not.toContain("このテーマの RSS");
+
+    const foreignThemeHtml = await (await view(`/themes/${encodeURIComponent("外国人犯罪")}`)).text();
+    expect(foreignThemeHtml).toContain("国籍別の人数");
+    expect(foreignThemeHtml).toContain("タップで事件一覧へ");
 
     const themeRss = await (await view(`/themes/${encodeURIComponent("強盗")}/feed.xml`)).text();
     const rssMatches = themeRss.match(/強盗致傷事件で被告に拘禁刑9年の判決/g) ?? [];
@@ -302,13 +310,13 @@ describe("公開サイト（S1 + S2）", () => {
     expect(themesListHtml).toContain("compact-grid");
     expect(aboutHtml).not.toMatch(/muse/i);
 
-    // TOP: HANZAI Watch・最上部グラフ・外国人犯罪タイル・犯罪別/統計・バー付きテーマ・ダブルタップズーム防止
+    // TOP: HANZAI Watch・最上部グラフ・外国人犯罪タイル・テーマ別/統計・バー付きテーマ・ダブルタップズーム防止
     const homeHtml = await (await view("/")).text();
     expect(homeHtml).toContain("HANZAI Watch");
     expect(homeHtml).toContain("touch-action: manipulation");
     expect(homeHtml).not.toContain("累計事件数");
     expect(homeHtml).not.toContain("法律の分類（上位）");
-    expect(homeHtml).toContain("犯罪別");
+    expect(homeHtml).toContain("テーマ別");
     expect(homeHtml).not.toContain("統計・CSV");
     expect(homeHtml).toContain("bar-grid");
     expect(homeHtml).toContain("直近 1 年の犯罪・判決件数推移");
@@ -336,13 +344,14 @@ describe("公開サイト（S1 + S2）", () => {
     expect(lawDetailHtml).toContain("量刑の分布（1件）");
     expect(lawDetailHtml).toContain("法定刑の範囲内における量刑分布グラフ");
 
-    // 都道府県ページにリアル日本地図 SVG と地域ズーム・地図外ドック・テーブル併用があること
+    // 都道府県ページにリアル日本地図 SVG と地域ズーム・地図外ドック・コンパクト2列カードグリッドがあること
     const prefsHtml = await (await view("/prefectures")).text();
     expect(prefsHtml).toContain('id="cw-japan-svg"');
     expect(prefsHtml).toContain('id="cw-map-dock"');
     expect(prefsHtml).not.toContain('id="cw-map-popover"');
     expect(prefsHtml).toContain("九州・沖縄");
-    expect(prefsHtml).toContain('id="cw-pref-tbody"');
+    expect(prefsHtml).toContain('id="cw-pref-grid"');
+    expect(prefsHtml).toContain('id="cw-pref-more"');
 
     // 都道府県詳細ページの法律・テーマ・市区町村リンクが都道府県で絞り込んだ /cases に飛ぶこと
     const prefDetailHtml = await (await view(`/prefectures/${encodeURIComponent("東京都")}`)).text();

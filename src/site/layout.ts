@@ -433,21 +433,50 @@ a.kpi-card:hover {
 }
 .ratio-seg:hover { filter: brightness(1.1); text-decoration: none; color: #fff; }
 
-/* Nationality horizontal stacked bar chart */
-.nat-list { display: flex; flex-direction: column; gap: 10px; }
+/* Nationality horizontal stacked bar chart (unified across /stats and /themes/外国人犯罪) */
+.nat-list { display: flex; flex-direction: column; gap: 8px; }
 .nat-row {
-  display: grid; grid-template-columns: 112px minmax(0, 1fr) 52px; align-items: center; gap: 10px;
-  padding: 6px 8px; border-radius: 10px; color: inherit; text-decoration: none;
-  transition: background 0.15s;
+  display: grid; grid-template-columns: 108px minmax(0, 1fr) 68px; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 12px; color: inherit; text-decoration: none;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
 }
-.nat-row:hover { background: var(--surface-subtle); text-decoration: none; }
-.nat-label { font-size: 13.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nat-row:hover { background: var(--surface-subtle); border-color: var(--line); text-decoration: none; }
+.nat-label { font-size: 13.5px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nat-track {
-  display: flex; align-items: center; height: 18px; border-radius: 6px;
+  display: flex; align-items: center; height: 24px; border-radius: 7px;
   background: var(--track); overflow: hidden;
 }
-.nat-seg { height: 100%; }
-.nat-count { text-align: right; font-size: 13.5px; font-weight: 700; color: var(--text); }
+.nat-seg {
+  height: 100%; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden;
+}
+.nat-count {
+  text-align: right; font-size: 13.5px; font-weight: 700; color: var(--text);
+  display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap;
+}
+.nat-chev { color: var(--muted); font-size: 15px; line-height: 1; }
+
+/* Theme prefecture horizontal bar rows */
+.hbar-list { display: flex; flex-direction: column; gap: 6px; }
+.hbar-row {
+  display: grid; grid-template-columns: 80px 48px minmax(0, 1fr); align-items: center; gap: 10px;
+  padding: 7px 9px; border-radius: 10px; color: inherit; text-decoration: none;
+  transition: background 0.15s;
+}
+.hbar-row:hover { background: var(--surface-subtle); text-decoration: none; }
+.hbar-label { font-size: 13.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hbar-count { font-size: 13px; font-weight: 700; color: var(--text-sub); text-align: right; white-space: nowrap; }
+.hbar-track { width: 100%; height: 10px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.hbar-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-bright));
+}
+
+/* KPI mini progress bar */
+.kpi-mini-track { width: 100%; height: 5px; border-radius: 999px; background: var(--track); overflow: hidden; margin-top: 8px; }
+.kpi-mini-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), #38bdf8); }
+.prog-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 
 /* Tags & pills */
 .pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -710,8 +739,9 @@ dl.kv dd { margin: 0; color: var(--text); }
   .bar-card { padding: 11px 12px; gap: 6px; }
   .bar-card-label { font-size: 13px; }
   .bar-card-val { font-size: 14.5px; }
-  .nat-row { grid-template-columns: 88px minmax(0, 1fr) 44px; gap: 8px; padding: 5px 4px; }
+  .nat-row { grid-template-columns: 88px minmax(0, 1fr) 58px; gap: 8px; padding: 6px 4px; }
   .nat-label, .nat-count { font-size: 12.5px; }
+  .hbar-row { grid-template-columns: 72px 44px minmax(0, 1fr); gap: 8px; padding: 6px 6px; }
   .demo-sent-row { grid-template-columns: 74px minmax(0, 1fr) 74px; gap: 8px; padding: 9px 10px; }
   .demo-sent-label { font-size: 12.5px; }
   .demo-sent-ratio strong { font-size: 13px; }

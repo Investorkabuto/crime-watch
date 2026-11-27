@@ -163,28 +163,45 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
 
   // 「外国人犯罪」テーマは人単位・記載なし別の国籍集計も併記（設計書 §4.3）
   const natData = theme === "外国人犯罪" ? await nationalityStats(db, {}) : null;
+  const statedNats = natData ? natData.nationalities.filter((r) => r.nationality !== "記載なし") : [];
+  const maxNat = Math.max(1, ...statedNats.map((r) => r.people));
+
+  const judgPct = summary.total_cases > 0 ? Math.round((summary.with_judgment / summary.total_cases) * 100) : 0;
+  const maxPref = Math.max(1, ...prefs.map((p) => p.cases));
+  const totalProg = progs.reduce((acc, p) => acc + p.cases, 0);
+  const progressColor = (prog: string): string => {
+    if (prog === "捜査中") return "#f59e0b";
+    if (prog === "公判中" || prog === "略式手続") return "var(--accent)";
+    if (prog === "判決後（未確定）") return "#38bdf8";
+    if (prog === "確定") return "#10b981";
+    if (prog === "不起訴" || prog === "処分保留" || prog === "家裁送致") return "#8b5cf6";
+    return "var(--muted)";
+  };
 
   const chart = renderMonthlyBarChart(monthly.slice(-12));
   const canonicalPath = `/themes/${encodeURIComponent(theme)}`;
 
   const body = html`
     <section class="card">
-      <div class="pills" style="margin-bottom:8px">
-        <a class="pill" href="/themes">テーマ一覧</a>
-        <span class="pill">${meta.group}</span>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <div class="pills">
+          <a class="pill" href="/themes">← テーマ一覧</a>
+          <span class="pill">${meta.group}</span>
+        </div>
+        <a class="pill" href="/themes/${encodeURIComponent(theme)}/feed.xml" aria-label="このテーマのRSS配信">RSS</a>
       </div>
       <h1 class="page-h1">${theme}</h1>
       <p class="page-lead mb-0">${meta.criteria}</p>
     </section>
 
-    <section class="bento-kpi mt-16">
+    <section class="bento-kpi-2 mt-16">
       <a class="kpi-card" href="/cases?theme=${encodeURIComponent(theme)}">
         <div class="kpi-head">
-          <span class="kpi-label">記録された事件数</span>
+          <span class="kpi-label">事件数</span>
           <span class="kpi-arrow" aria-hidden="true">→</span>
         </div>
         <div class="kpi-value num">${summary.total_cases.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
-        <div class="kpi-sub">報道された事件の件数</div>
+        <div class="kpi-sub">報道された事件の総数</div>
       </a>
       <a class="kpi-card" href="/cases?theme=${encodeURIComponent(theme)}&has_judgment=1">
         <div class="kpi-head">
@@ -192,48 +209,78 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
           <span class="kpi-arrow" aria-hidden="true">→</span>
         </div>
         <div class="kpi-value num">${summary.with_judgment.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
-      </a>
-      <div class="kpi-card">
-        <div class="kpi-label">配信</div>
-        <div style="margin-top:6px">
-          <a class="btn" href="/themes/${encodeURIComponent(theme)}/feed.xml">このテーマの RSS</a>
+        <div class="kpi-sub">全体の ${judgPct}%</div>
+        <div class="kpi-mini-track" aria-hidden="true">
+          <div class="kpi-mini-fill" style="width:${judgPct}%"></div>
         </div>
-      </div>
+      </a>
     </section>
 
     ${chart
-      ? html`<section class="card">
+      ? html`<section class="card mt-16">
           <h2 class="card-title">月ごとの件数推移</h2>
           ${chart}
         </section>`
       : ""}
 
-    <div class="bento-equal">
+    <div class="bento-equal mt-16">
       <section class="card">
-        <h2 class="card-title">都道府県別の内訳（上位）</h2>
-        ${prefs.length
-          ? html`<div class="pills">
-              ${prefs.map(
-                (p) => html`<a
-                  class="pill"
-                  href="/cases?theme=${encodeURIComponent(theme)}&prefecture=${encodeURIComponent(p.prefecture)}"
-                  >${p.prefecture}<span class="pill-count">${p.cases}</span></a
-                >`,
-              )}
-            </div>`
+        <h2 class="card-title">
+          <span>進み具合の内訳</span>
+          <span class="small muted">タップで絞り込み</span>
+        </h2>
+        ${progs.length && totalProg > 0
+          ? html`<div class="ratio-bar" role="img" aria-label="進み具合の割合">
+                ${progs.map((p) => {
+                  const pct = Math.round((p.cases / totalProg) * 100);
+                  const w = (p.cases / totalProg) * 100;
+                  const col = progressColor(p.progress);
+                  return html`<a
+                    class="ratio-seg"
+                    href="/cases?theme=${encodeURIComponent(theme)}&progress=${encodeURIComponent(p.progress)}"
+                    style="width:${w}%;background:${col}"
+                    title="${p.progress}: ${p.cases}件（${pct}%）"
+                    >${pct >= 15 ? `${p.progress} ${pct}%` : pct >= 8 ? `${pct}%` : ""}</a
+                  >`;
+                })}
+              </div>
+              <div class="pills">
+                ${progs.map((p) => {
+                  const col = progressColor(p.progress);
+                  return html`<a
+                    class="pill"
+                    href="/cases?theme=${encodeURIComponent(theme)}&progress=${encodeURIComponent(p.progress)}"
+                    ><span class="prog-dot" style="background:${col}" aria-hidden="true"></span>${p.progress}<span
+                      class="pill-count"
+                      >${p.cases}</span
+                    ></a
+                  >`;
+                })}
+              </div>`
           : html`<p class="muted small mb-0">データがありません。</p>`}
       </section>
+
       <section class="card">
-        <h2 class="card-title">進み具合の内訳</h2>
-        ${progs.length
-          ? html`<div class="pills">
-              ${progs.map(
-                (p) => html`<a
-                  class="pill"
-                  href="/cases?theme=${encodeURIComponent(theme)}&progress=${encodeURIComponent(p.progress)}"
-                  >${p.progress}<span class="pill-count">${p.cases}</span></a
-                >`,
-              )}
+        <h2 class="card-title">
+          <span>都道府県別の内訳（上位）</span>
+          <span class="small muted">タップで絞り込み</span>
+        </h2>
+        ${prefs.length
+          ? html`<div class="hbar-list" role="list" aria-label="都道府県別の事件件数">
+              ${prefs.map((p) => {
+                const w = Math.max(4, Math.round((p.cases / maxPref) * 100));
+                return html`<a
+                  class="hbar-row"
+                  href="/cases?theme=${encodeURIComponent(theme)}&prefecture=${encodeURIComponent(p.prefecture)}"
+                  role="listitem"
+                >
+                  <span class="hbar-label">${p.prefecture}</span>
+                  <span class="hbar-count num">${p.cases.toLocaleString("ja-JP")}件</span>
+                  <span class="hbar-track" aria-hidden="true">
+                    <span class="hbar-fill" style="display:block;width:${w}%"></span>
+                  </span>
+                </a>`;
+              })}
             </div>`
           : html`<p class="muted small mb-0">データがありません。</p>`}
       </section>
@@ -241,34 +288,64 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
 
     ${natData
       ? html`<section class="card mt-16">
-          <h2 class="card-title">国籍別の人数（人単位）</h2>
-          <p class="small muted" style="margin:-6px 0 12px">
-            記事に明記された国籍のみを集計しています。「記載なし」は日本国籍とはみなしません。報道された事件にもとづく集計であり、人口あたりの補正はしていません。
+          <h2 class="card-title">
+            <span>国籍別の人数</span>
+            <span class="small muted">タップで事件一覧へ</span>
+          </h2>
+          ${statedNats.length
+            ? html`<div class="nat-list" role="list" aria-label="国籍別の積み上げ横棒グラフ">
+                  ${statedNats.slice(0, 15).map((r) => {
+                    const totalW = Math.max(4, (r.people / maxNat) * 100);
+                    const visPct = r.people > 0 ? (r.residence["来日外国人"] / r.people) * totalW : 0;
+                    const resPct = r.people > 0 ? (r.residence["定着居住者"] / r.people) * totalW : 0;
+                    const unkPct = Math.max(0, totalW - visPct - resPct);
+                    return html`<a
+                      class="nat-row"
+                      href="/cases?theme=${encodeURIComponent(theme)}&nationality=${encodeURIComponent(r.nationality)}"
+                      role="listitem"
+                    >
+                      <span class="nat-label">${r.nationality}</span>
+                      <span
+                        class="nat-track"
+                        title="来日外国人 ${r.residence["来日外国人"]}人 / 定着居住者 ${r.residence["定着居住者"]}人 / 不明 ${r.residence["不明"]}人"
+                      >
+                        ${visPct > 0
+                          ? html`<span class="nat-seg" style="width:${visPct}%;background:var(--accent)"
+                              >${visPct >= 10 ? r.residence["来日外国人"] : ""}</span
+                            >`
+                          : ""}
+                        ${resPct > 0
+                          ? html`<span class="nat-seg" style="width:${resPct}%;background:#38bdf8"
+                              >${resPct >= 10 ? r.residence["定着居住者"] : ""}</span
+                            >`
+                          : ""}
+                        ${unkPct > 0
+                          ? html`<span class="nat-seg" style="width:${unkPct}%;background:var(--muted)"
+                              >${unkPct >= 10 ? r.residence["不明"] : ""}</span
+                            >`
+                          : ""}
+                      </span>
+                      <span class="nat-count num"
+                        >${r.people.toLocaleString("ja-JP")}人<span class="nat-chev" aria-hidden="true">›</span></span
+                      >
+                    </a>`;
+                  })}
+                </div>
+                <div class="chart-legend mt-12" aria-hidden="true">
+                  <span class="chart-legend-item"
+                    ><span class="chart-dot" style="background:var(--accent)"></span>来日外国人</span
+                  >
+                  <span class="chart-legend-item"
+                    ><span class="chart-dot" style="background:#38bdf8"></span>定着居住者</span
+                  >
+                  <span class="chart-legend-item"
+                    ><span class="chart-dot" style="background:var(--muted)"></span>在留資格不明</span
+                  >
+                </div>`
+            : html`<p class="muted small mb-0">国籍の記載があるデータはまだありません。</p>`}
+          <p class="small muted mt-12 mb-0">
+            記事に明記された国籍のみを集計しています。報道された事件にもとづく集計であり、人口あたりの補正はしていません。
           </p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>国籍</th>
-                  <th class="num">人数</th>
-                  <th class="num">事件数</th>
-                  <th class="num">来日外国人</th>
-                  <th class="num">定着居住者</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${natData.nationalities.slice(0, 15).map(
-                  (r) => html`<tr>
-                    <td>${r.nationality}</td>
-                    <td class="num">${r.people}</td>
-                    <td class="num">${r.cases}</td>
-                    <td class="num">${r.residence["来日外国人"]}</td>
-                    <td class="num">${r.residence["定着居住者"]}</td>
-                  </tr>`,
-                )}
-              </tbody>
-            </table>
-          </div>
         </section>`
       : ""}
 

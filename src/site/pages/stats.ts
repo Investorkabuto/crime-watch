@@ -394,11 +394,25 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
                 return html`<a class="nat-row" href="${casesHref({ nationality: r.nationality })}" role="listitem">
                   <span class="nat-label">${r.nationality}</span>
                   <span class="nat-track" title="来日外国人 ${r.residence["来日外国人"]}人 / 定着居住者 ${r.residence["定着居住者"]}人 / 不明 ${r.residence["不明"]}人">
-                    ${visPct > 0 ? html`<span class="nat-seg" style="width:${visPct}%;background:var(--accent)"></span>` : ""}
-                    ${resPct > 0 ? html`<span class="nat-seg" style="width:${resPct}%;background:#38bdf8"></span>` : ""}
-                    ${unkPct > 0 ? html`<span class="nat-seg" style="width:${unkPct}%;background:var(--muted)"></span>` : ""}
+                    ${visPct > 0
+                      ? html`<span class="nat-seg" style="width:${visPct}%;background:var(--accent)"
+                          >${visPct >= 10 ? r.residence["来日外国人"] : ""}</span
+                        >`
+                      : ""}
+                    ${resPct > 0
+                      ? html`<span class="nat-seg" style="width:${resPct}%;background:#38bdf8"
+                          >${resPct >= 10 ? r.residence["定着居住者"] : ""}</span
+                        >`
+                      : ""}
+                    ${unkPct > 0
+                      ? html`<span class="nat-seg" style="width:${unkPct}%;background:var(--muted)"
+                          >${unkPct >= 10 ? r.residence["不明"] : ""}</span
+                        >`
+                      : ""}
                   </span>
-                  <span class="nat-count num">${r.people.toLocaleString("ja-JP")}人</span>
+                  <span class="nat-count num"
+                    >${r.people.toLocaleString("ja-JP")}人<span class="nat-chev" aria-hidden="true">›</span></span
+                  >
                 </a>`;
               })}
             </div>

@@ -222,7 +222,11 @@ const PREF_MAP_CSS = `
 .legend-swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 
 .is-hidden-view { display: none !important; }
-tr.is-region-hidden { display: none; }
+.pref-card.is-region-hidden, .pref-card.is-extra-hidden { display: none; }
+.pref-card-sub {
+  font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 @media (max-width: 640px) {
   .map-stage { aspect-ratio: 1 / 1; max-height: 440px; }
@@ -287,12 +291,31 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
   const regionBtns = document.querySelectorAll("[data-region-btn]");
   const shapes = svg.querySelectorAll(".pref-shape");
   const labels = svg.querySelectorAll(".pref-label");
-  const tableRows = document.querySelectorAll("#cw-pref-tbody tr[data-region]");
+  const prefCards = document.querySelectorAll("#cw-pref-grid .pref-card");
+  const moreWrap = document.getElementById("cw-pref-more-wrap");
+  const moreBtn = document.getElementById("cw-pref-more");
 
   let curVb = [...JAPAN_VB];
   let animId = 0;
   let activeRegion = null;
   let selectedPref = null;
+  let expandedAll = false;
+
+  const syncCards = () => {
+    const hasRegion = Boolean(activeRegion);
+    prefCards.forEach((card) => {
+      if (hasRegion) {
+        card.classList.toggle("is-region-hidden", card.dataset.region !== activeRegion);
+        card.classList.remove("is-extra-hidden");
+      } else {
+        card.classList.remove("is-region-hidden");
+        card.classList.toggle("is-extra-hidden", !expandedAll && card.dataset.prefExtra === "1");
+      }
+    });
+    if (moreWrap) {
+      moreWrap.classList.toggle("is-hidden-view", hasRegion || expandedAll);
+    }
+  };
 
   const animateViewBox = (target) => {
     cancelAnimationFrame(animId);
@@ -352,9 +375,7 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
     if (hintEl) hintEl.textContent = reg ? reg.label + "：県をタップして選択" : "地方をタップすると拡大します";
     if (tableHeading) tableHeading.textContent = reg ? "都道府県別データ（" + reg.label + "）" : "都道府県別データ（全国）";
     if (tableReset) tableReset.classList.toggle("is-hidden-view", !reg);
-    tableRows.forEach((tr) => {
-      tr.classList.toggle("is-region-hidden", Boolean(reg && tr.dataset.region !== regionId));
-    });
+    syncCards();
   };
 
   shapes.forEach((shape) => {
@@ -382,6 +403,12 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
 
   backBtn.addEventListener("click", () => setRegion(null));
   if (tableReset) tableReset.addEventListener("click", (e) => { e.preventDefault(); setRegion(null); });
+  if (moreBtn) {
+    moreBtn.addEventListener("click", () => {
+      expandedAll = true;
+      syncCards();
+    });
+  }
   regionBtns.forEach((b) => {
     b.addEventListener("click", () => {
       const id = b.dataset.regionBtn || null;
@@ -503,40 +530,40 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
     <section id="cw-table-card" class="card mt-16">
       <h2 class="card-title">
         <span id="cw-table-region-label">都道府県別データ（全国）</span>
-        <a id="cw-table-reset" class="small is-hidden-view" href="#">全国をすべて表示</a>
+        <a id="cw-table-reset" class="small is-hidden-view" href="#">全国に戻る</a>
       </h2>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>都道府県</th>
-              <th class="num">事件数</th>
-              <th class="num">人口10万人あたり</th>
-              <th class="num">判決数</th>
-              <th class="num hide-sm">執行猶予率</th>
-            </tr>
-          </thead>
-          <tbody id="cw-pref-tbody">
-            ${stats.prefectures.map((r) => {
-              const rate = per100k(r.cases, r.prefecture);
-              const reg = regionByName.get(r.prefecture) ?? "unknown";
-              return html`<tr data-region="${reg}">
-                <td>
-                  <a href="/prefectures/${encodeURIComponent(r.prefecture)}" style="font-weight:600"
-                    >${r.prefecture}</a
-                  >
-                </td>
-                <td class="num">${r.cases.toLocaleString("ja-JP")}</td>
-                <td class="num">${rate != null ? rate.toFixed(2) : "—"}</td>
-                <td class="num">${r.judgments.toLocaleString("ja-JP")}</td>
-                <td class="num hide-sm">
-                  ${r.custodial_judgments >= 20 ? formatPct(r.suspended_rate) : "—"}
-                </td>
-              </tr>`;
-            })}
-          </tbody>
-        </table>
+      <div id="cw-pref-grid" class="bar-grid">
+        ${stats.prefectures.map((r, idx) => {
+          const rate = per100k(r.cases, r.prefecture);
+          const reg = regionByName.get(r.prefecture) ?? "unknown";
+          const barPct = r.cases > 0 ? Math.max(4, Math.round((r.cases / Math.max(1, maxCases)) * 100)) : 0;
+          const isExtra = idx >= 12;
+          return html`<a
+            class="bar-card pref-card${isExtra ? " is-extra-hidden" : ""}"
+            href="/prefectures/${encodeURIComponent(r.prefecture)}"
+            data-region="${reg}"
+            ${isExtra ? html`data-pref-extra="1"` : ""}
+          >
+            <div class="bar-card-head">
+              <span class="bar-card-label">${r.prefecture}</span>
+              <span class="bar-card-val num">${r.cases.toLocaleString("ja-JP")}<span class="small muted">件</span></span>
+            </div>
+            <div class="pref-card-sub">
+              人口10万人あたり ${rate != null ? rate.toFixed(2) : "—"} · 判決 ${r.judgments.toLocaleString("ja-JP")}件
+            </div>
+            <div class="bar-track" aria-hidden="true">
+              <div class="bar-fill" style="width:${barPct}%"></div>
+            </div>
+          </a>`;
+        })}
       </div>
+      ${stats.prefectures.length > 12
+        ? html`<div id="cw-pref-more-wrap" style="margin-top:12px;text-align:center">
+            <button id="cw-pref-more" type="button" class="btn">
+              残り ${stats.prefectures.length - 12} 都道府県をすべて表示
+            </button>
+          </div>`
+        : ""}
     </section>
 
     <script>
