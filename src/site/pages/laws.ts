@@ -16,23 +16,29 @@ export async function renderLawsListPage(c: Context<{ Bindings: Env }>) {
   const origin = new URL(c.req.url).origin;
   const activeCat = c.req.query("category") === "特別法犯" ? "特別法犯" : "刑法犯";
 
+  const hasAgg = Boolean(
+    await db.prepare("SELECT 1 AS ok FROM agg_meta WHERE key = 'last_aggregated_at' LIMIT 1").first(),
+  );
+
   const [lawsRes, periodsRes, countsRes] = await db.batch([
     db.prepare("SELECT code, name, law_name, category, group_name, sort_order FROM laws ORDER BY sort_order"),
     db.prepare(
       `SELECT law_code, statutory_penalty, verified FROM law_penalty_periods
        WHERE effective_to IS NULL`,
     ),
-    db.prepare(
-      `WITH case_laws AS (
-         SELECT r.case_id, rc.law_code FROM report_charges rc JOIN reports r ON r.id = rc.report_id WHERE rc.law_code IS NOT NULL
-         UNION
-         SELECT j.case_id, jc.law_code FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id WHERE jc.law_code IS NOT NULL AND j.status = 'published'
-       )
-       SELECT cl.law_code, COUNT(DISTINCT c.id) AS cases
-       FROM case_laws cl JOIN cases c ON c.id = cl.case_id
-       WHERE c.status = 'published'
-       GROUP BY cl.law_code`,
-    ),
+    hasAgg
+      ? db.prepare("SELECT law_code, SUM(cases) AS cases FROM agg_law_monthly GROUP BY law_code")
+      : db.prepare(
+          `WITH case_laws AS (
+             SELECT r.case_id, rc.law_code FROM report_charges rc JOIN reports r ON r.id = rc.report_id WHERE rc.law_code IS NOT NULL
+             UNION
+             SELECT j.case_id, jc.law_code FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id WHERE jc.law_code IS NOT NULL AND j.status = 'published'
+           )
+           SELECT cl.law_code, COUNT(DISTINCT c.id) AS cases
+           FROM case_laws cl JOIN cases c ON c.id = cl.case_id
+           WHERE c.status = 'published'
+           GROUP BY cl.law_code`,
+        ),
   ]);
 
   type LawRow = { code: string; name: string; law_name: string; category: string; group_name: string };
@@ -162,6 +168,10 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
     );
   }
 
+  const hasAgg = Boolean(
+    await db.prepare("SELECT 1 AS ok FROM agg_meta WHERE key = 'last_aggregated_at' LIMIT 1").first(),
+  );
+
   const [periodsRes, monthlyRes, distRes, judgAttrRes, casesRes] = await db.batch([
     db
       .prepare(
@@ -169,19 +179,25 @@ export async function renderLawDetailPage(c: Context<{ Bindings: Env }>) {
          FROM law_penalty_periods WHERE law_code = ? ORDER BY effective_from DESC`,
       )
       .bind(code),
-    db
-      .prepare(
-        `WITH case_laws AS (
-           SELECT r.case_id FROM report_charges rc JOIN reports r ON r.id = rc.report_id WHERE rc.law_code = ?1
-           UNION
-           SELECT j.case_id FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id WHERE jc.law_code = ?1 AND j.status = 'published'
-         )
-         SELECT substr(COALESCE(c.occurred_on, c.latest_at), 1, 7) AS month, COUNT(DISTINCT c.id) AS cases
-         FROM cases c JOIN case_laws cl ON cl.case_id = c.id
-         WHERE c.status = 'published'
-         GROUP BY 1 ORDER BY 1 ASC`,
-      )
-      .bind(code),
+    hasAgg
+      ? db
+          .prepare(
+            `SELECT month, SUM(cases) AS cases FROM agg_law_monthly WHERE law_code = ? GROUP BY month ORDER BY month ASC`,
+          )
+          .bind(code)
+      : db
+          .prepare(
+            `WITH case_laws AS (
+               SELECT r.case_id FROM report_charges rc JOIN reports r ON r.id = rc.report_id WHERE rc.law_code = ?1
+               UNION
+               SELECT j.case_id FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id WHERE jc.law_code = ?1 AND j.status = 'published'
+             )
+             SELECT substr(COALESCE(c.occurred_on, c.latest_at), 1, 7) AS month, COUNT(DISTINCT c.id) AS cases
+             FROM cases c JOIN case_laws cl ON cl.case_id = c.id
+             WHERE c.status = 'published'
+             GROUP BY 1 ORDER BY 1 ASC`,
+          )
+          .bind(code),
     db
       .prepare("SELECT * FROM agg_sentence_dist WHERE law_code = ? AND instance = '*'")
       .bind(code),

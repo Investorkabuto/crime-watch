@@ -39,7 +39,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
   const weekAgo = daysAgoJst(7);
   const recentThreshold = daysAgoJst(3);
   const months12 = last12Months(today);
-  const firstMonth = months12[0]!;
+  const firstMonthStart = `${months12[0]!}-01`;
 
   const [
     kpiRes,
@@ -53,7 +53,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
     db
       .prepare(
         `SELECT
-           (SELECT COUNT(*) FROM reports r JOIN cases c ON c.id = r.case_id WHERE c.status = 'published' AND substr(r.reported_at, 1, 10) >= ?) AS week_reports,
+           (SELECT COUNT(*) FROM reports r JOIN cases c ON c.id = r.case_id WHERE c.status = 'published' AND r.reported_at >= ?) AS week_reports,
            (SELECT COUNT(*) FROM judgments j JOIN cases c ON c.id = j.case_id WHERE c.status = 'published' AND j.status = 'published' AND j.decided_on >= ?) AS week_judgments`,
       )
       .bind(weekAgo, weekAgo),
@@ -62,25 +62,25 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         `SELECT substr(r.reported_at, 1, 7) AS month, COUNT(*) AS n
          FROM reports r
          JOIN cases c ON c.id = r.case_id
-         WHERE c.status = 'published' AND substr(r.reported_at, 1, 7) >= ?
+         WHERE c.status = 'published' AND r.reported_at >= ?
          GROUP BY 1`,
       )
-      .bind(firstMonth),
+      .bind(firstMonthStart),
     db
       .prepare(
         `SELECT substr(j.decided_on, 1, 7) AS month, COUNT(*) AS n
          FROM judgments j
          JOIN cases c ON c.id = j.case_id
-         WHERE c.status = 'published' AND j.status = 'published' AND substr(j.decided_on, 1, 7) >= ?
+         WHERE c.status = 'published' AND j.status = 'published' AND j.decided_on >= ?
          GROUP BY 1`,
       )
-      .bind(firstMonth),
+      .bind(firstMonthStart),
     db
       .prepare(
         `SELECT ct.theme, COUNT(DISTINCT c.id) AS n
-         FROM case_themes ct
-         JOIN cases c ON c.id = ct.case_id
-         WHERE c.status = 'published' AND substr(c.latest_at, 1, 10) >= ?
+         FROM cases c
+         JOIN case_themes ct ON ct.case_id = c.id
+         WHERE c.status = 'published' AND c.latest_at >= ?
          GROUP BY ct.theme
          ORDER BY n DESC, ct.theme ASC
          LIMIT 6`,
