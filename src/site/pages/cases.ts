@@ -84,6 +84,10 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
       binds.push(q.prefecture);
     }
   }
+  if (q.city?.trim()) {
+    where.push("c.city = ?");
+    binds.push(q.city.trim());
+  }
   if (q.progress) {
     where.push("c.progress = ?");
     binds.push(q.progress);
@@ -151,6 +155,7 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
       theme: q.theme,
       prefecture: q.prefecture,
       pref_basis: q.pref_basis,
+      city: q.city,
       progress: q.progress,
       from: q.from,
       to: q.to,
@@ -166,6 +171,7 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
     const bLabel = q.pref_basis === "police" ? "捜査警察" : q.pref_basis === "court" ? "裁判所" : "発生地";
     activeChips.push(`${q.prefecture}${q.pref_basis && q.pref_basis !== "occurrence" ? `(${bLabel})` : ""}`);
   }
+  if (q.city?.trim()) activeChips.push(q.city.trim());
   if (q.law) activeChips.push(laws.find((l) => l.code === q.law)?.name ?? q.law);
   if (q.group) activeChips.push(q.group);
   if (q.theme) activeChips.push(`#${q.theme}`);

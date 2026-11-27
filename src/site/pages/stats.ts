@@ -193,10 +193,15 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
             ${crossRes.results.length
               ? crossRes.results.map((r) => {
                   const rate = per100k(r.cases, r.prefecture);
+                  const caseParams = new URLSearchParams({ prefecture: r.prefecture, law: r.law_code });
+                  if (q.from) caseParams.set("from", q.from);
+                  if (q.to) caseParams.set("to", q.to);
                   return html`<tr>
                     <td><a href="/prefectures/${encodeURIComponent(r.prefecture)}">${r.prefecture}</a></td>
                     <td><a href="/laws/${encodeURIComponent(r.law_code)}">${r.law_name}</a></td>
-                    <td class="num">${r.cases.toLocaleString("ja-JP")}</td>
+                    <td class="num">
+                      <a href="/cases?${caseParams.toString()}" style="font-weight:700">${r.cases.toLocaleString("ja-JP")}</a>
+                    </td>
                     <td class="num">${rate != null ? rate.toFixed(2) : "—"}</td>
                   </tr>`;
                 })

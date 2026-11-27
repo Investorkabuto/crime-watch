@@ -292,11 +292,22 @@ describe("公開サイト（S1 + S2）", () => {
     expect(homeHtml).toContain("都道府県マップ");
     expect(homeHtml).toContain('id="cw-search-drawer"');
 
-    // 都道府県ページにリアル日本地図 SVG と地域ズーム・テーブル併用があること
+    // 都道府県ページにリアル日本地図 SVG と地域ズーム・地図外ドック・テーブル併用があること
     const prefsHtml = await (await view("/prefectures")).text();
     expect(prefsHtml).toContain('id="cw-japan-svg"');
+    expect(prefsHtml).toContain('id="cw-map-dock"');
+    expect(prefsHtml).not.toContain('id="cw-map-popover"');
     expect(prefsHtml).toContain("九州・沖縄");
     expect(prefsHtml).toContain('id="cw-pref-tbody"');
+
+    // 都道府県詳細ページの法律・テーマ・市区町村リンクが都道府県で絞り込んだ /cases に飛ぶこと
+    const prefDetailHtml = await (await view(`/prefectures/${encodeURIComponent("東京都")}`)).text();
+    expect(prefDetailHtml).toContain(`/cases?prefecture=${encodeURIComponent("東京都")}&pref_basis=occurrence&law=robbery_injury`);
+    expect(prefDetailHtml).toContain(`/cases?prefecture=${encodeURIComponent("東京都")}&pref_basis=occurrence&theme=${encodeURIComponent("闇バイト・トクリュウ")}`);
+    expect(prefDetailHtml).toContain(`/cases?prefecture=${encodeURIComponent("東京都")}&pref_basis=occurrence&city=${encodeURIComponent("江東区")}`);
+
+    const cityCasesHtml = await (await view(`/cases?prefecture=${encodeURIComponent("東京都")}&city=${encodeURIComponent("江東区")}`)).text();
+    expect(cityCasesHtml).toContain("強盗致傷事件で被告に拘禁刑9年の判決");
 
     // 事件一覧・統計で統一検索ドロワーが採用されていること
     const casesHtml = await (await view("/cases")).text();

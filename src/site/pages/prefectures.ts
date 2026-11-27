@@ -168,34 +168,58 @@ const PREF_MAP_CSS = `
   font-size: 11.5px; color: var(--muted); pointer-events: none;
 }
 
-.map-popover {
-  position: absolute; right: 14px; bottom: 14px; z-index: 6;
-  min-width: 220px; max-width: calc(100% - 28px);
-  padding: 14px 16px; border-radius: 16px;
-  background: var(--drawer-bg);
-  backdrop-filter: blur(18px) saturate(180%);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
-  border: 1px solid var(--accent-border);
-  box-shadow: var(--shadow-drawer);
-  opacity: 0; pointer-events: none; transform: translateY(8px) scale(0.98);
-  transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+.map-dock {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  min-height: 58px;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
-.map-popover.is-open { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
-.map-popover-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  margin-bottom: 6px;
+.map-dock.is-active {
+  background: var(--surface-solid);
+  border-color: var(--accent-border);
+  box-shadow: var(--accent-glow);
 }
-.map-popover-name { font-size: 16px; font-weight: 800; letter-spacing: -0.02em; }
-.map-popover-close {
-  border: 0; background: transparent; color: var(--muted); cursor: pointer;
-  padding: 2px 6px; font-size: 14px; border-radius: 8px;
+.map-dock-empty {
+  font-size: 13px;
+  color: var(--muted);
 }
-.map-popover-close:hover { color: var(--text); background: var(--surface-subtle); }
-.map-popover-metrics {
-  display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12.5px; color: var(--text-sub);
-  margin-bottom: 10px;
+.map-dock-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
 }
-.map-popover-metrics strong { color: var(--text); font-size: 14px; }
+.map-dock-name {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.map-dock-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 13px;
+  color: var(--text-sub);
+}
+.map-dock-metrics strong {
+  color: var(--text);
+  font-size: 14px;
+}
+.map-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
 
 .map-legend {
   position: absolute; left: 12px; bottom: 12px; z-index: 4;
@@ -212,8 +236,10 @@ tr.is-region-hidden { display: none; }
 @media (max-width: 640px) {
   .map-stage { aspect-ratio: 1 / 1; max-height: 440px; }
   .map-hint { display: none; }
-  .map-popover { left: 10px; right: 10px; bottom: 10px; min-width: 0; }
   .map-legend { display: none; }
+  .map-dock { padding: 12px 14px; }
+  .map-dock-actions { width: 100%; margin-left: 0; }
+  .map-dock-actions .btn { flex: 1; }
 }
 `;
 
@@ -257,13 +283,15 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
 
   const backBtn = document.getElementById("cw-map-back");
   const hintEl = document.getElementById("cw-map-hint");
-  const pop = document.getElementById("cw-map-popover");
-  const popName = document.getElementById("cw-pop-name");
-  const popCases = document.getElementById("cw-pop-cases");
-  const popRate = document.getElementById("cw-pop-rate");
-  const popJudg = document.getElementById("cw-pop-judg");
-  const popLink = document.getElementById("cw-pop-link");
-  const popClose = document.getElementById("cw-pop-close");
+  const dock = document.getElementById("cw-map-dock");
+  const dockEmpty = document.getElementById("cw-dock-empty");
+  const dockContent = document.getElementById("cw-dock-content");
+  const dockActions = document.getElementById("cw-dock-actions");
+  const dockName = document.getElementById("cw-dock-name");
+  const dockCases = document.getElementById("cw-dock-cases");
+  const dockRate = document.getElementById("cw-dock-rate");
+  const dockJudg = document.getElementById("cw-dock-judg");
+  const dockLink = document.getElementById("cw-dock-link");
   const tableHeading = document.getElementById("cw-table-region-label");
   const tableReset = document.getElementById("cw-table-reset");
   const regionBtns = document.querySelectorAll("[data-region-btn]");
@@ -291,28 +319,38 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
     animId = requestAnimationFrame(step);
   };
 
-  const closePopover = () => {
+  const clearSelection = () => {
     selectedPref = null;
-    pop.classList.remove("is-open");
+    dock.classList.remove("is-active");
+    dockEmpty.classList.remove("is-hidden-view");
+    dockContent.classList.add("is-hidden-view");
+    dockActions.classList.add("is-hidden-view");
     shapes.forEach((s) => s.classList.remove("is-selected"));
+    const reg = activeRegion ? REGION_MAP[activeRegion] : null;
+    dockEmpty.textContent = reg
+      ? reg.label + "の県をタップすると概要が表示されます（もう一度タップで詳細へ）"
+      : "地図の地方をタップして拡大すると、各県の概要と詳細リンクがここに表示されます";
   };
 
-  const openPopover = (name) => {
+  const selectPrefecture = (name) => {
     const d = PREF_DATA[name];
     if (!d) return;
     selectedPref = name;
     shapes.forEach((s) => s.classList.toggle("is-selected", s.dataset.name === name));
-    popName.textContent = d.name;
-    popCases.textContent = d.cases.toLocaleString("ja-JP") + "件";
-    popRate.textContent = d.rate;
-    popJudg.textContent = d.judgments.toLocaleString("ja-JP") + "件";
-    popLink.setAttribute("href", d.href);
-    pop.classList.add("is-open");
+    dockName.textContent = d.name;
+    dockCases.textContent = d.cases.toLocaleString("ja-JP") + "件";
+    dockRate.textContent = d.rate;
+    dockJudg.textContent = d.judgments.toLocaleString("ja-JP") + "件";
+    dockLink.setAttribute("href", d.href);
+    dock.classList.add("is-active");
+    dockEmpty.classList.add("is-hidden-view");
+    dockContent.classList.remove("is-hidden-view");
+    dockActions.classList.remove("is-hidden-view");
   };
 
   const setRegion = (regionId) => {
     activeRegion = regionId;
-    closePopover();
+    clearSelection();
     const reg = regionId ? REGION_MAP[regionId] : null;
     stage.classList.toggle("is-zoomed", Boolean(reg));
     animateViewBox(reg ? reg.viewBox : JAPAN_VB);
@@ -321,7 +359,7 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
     labels.forEach((l) => l.classList.toggle("in-region", Boolean(reg && l.dataset.region === regionId)));
     regionBtns.forEach((b) => b.classList.toggle("is-active", (b.dataset.regionBtn || "") === (regionId || "")));
 
-    if (hintEl) hintEl.textContent = reg ? reg.label + "：県をタップして詳細を見る" : "地方をタップすると拡大します";
+    if (hintEl) hintEl.textContent = reg ? reg.label + "：県をタップして選択" : "地方をタップすると拡大します";
     if (tableHeading) tableHeading.textContent = reg ? "都道府県別データ（" + reg.label + "）" : "都道府県別データ（全国）";
     if (tableReset) tableReset.classList.toggle("is-hidden-view", !reg);
     tableRows.forEach((tr) => {
@@ -336,7 +374,7 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
       const name = shape.dataset.name;
       if (!activeRegion || activeRegion !== regId) {
         setRegion(regId);
-        if (regId === "hokkaido") openPopover(name);
+        if (regId === "hokkaido") selectPrefecture(name);
         return;
       }
       if (selectedPref === name) {
@@ -344,22 +382,21 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
         if (d) window.location.href = d.href;
         return;
       }
-      openPopover(name);
+      selectPrefecture(name);
     });
   });
 
   svg.addEventListener("click", () => {
-    if (selectedPref) closePopover();
+    if (selectedPref) clearSelection();
   });
 
   backBtn.addEventListener("click", () => setRegion(null));
-  popClose.addEventListener("click", closePopover);
   if (tableReset) tableReset.addEventListener("click", (e) => { e.preventDefault(); setRegion(null); });
   regionBtns.forEach((b) => {
     b.addEventListener("click", () => {
       const id = b.dataset.regionBtn || null;
       setRegion(id);
-      if (id === "hokkaido") openPopover("北海道");
+      if (id === "hokkaido") selectPrefecture("北海道");
     });
   });
 
@@ -456,18 +493,22 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
           <span class="legend-swatch" style="background:#748ffc"></span>
           <span>多</span>
         </div>
+      </div>
 
-        <div id="cw-map-popover" class="map-popover" role="status" aria-live="polite">
-          <div class="map-popover-head">
-            <span id="cw-pop-name" class="map-popover-name"></span>
-            <button id="cw-pop-close" type="button" class="map-popover-close" aria-label="閉じる">✕</button>
+      <div id="cw-map-dock" class="map-dock" role="status" aria-live="polite">
+        <div id="cw-dock-empty" class="map-dock-empty">
+          地図の地方をタップして拡大すると、各県の概要と詳細リンクがここに表示されます
+        </div>
+        <div id="cw-dock-content" class="map-dock-info is-hidden-view">
+          <span id="cw-dock-name" class="map-dock-name"></span>
+          <div class="map-dock-metrics">
+            <span>事件数 <strong id="cw-dock-cases" class="num"></strong></span>
+            <span>10万人比 <strong id="cw-dock-rate" class="num"></strong></span>
+            <span>判決 <strong id="cw-dock-judg" class="num"></strong></span>
           </div>
-          <div class="map-popover-metrics">
-            <span>事件数 <strong id="cw-pop-cases" class="num"></strong></span>
-            <span>10万人比 <strong id="cw-pop-rate" class="num"></strong></span>
-            <span>判決 <strong id="cw-pop-judg" class="num"></strong></span>
-          </div>
-          <a id="cw-pop-link" class="btn btn-primary" href="/prefectures" style="width:100%;padding:8px 12px;font-size:13px">
+        </div>
+        <div id="cw-dock-actions" class="map-dock-actions is-hidden-view">
+          <a id="cw-dock-link" class="btn btn-primary" href="/prefectures" style="padding:8px 16px;font-size:13px">
             詳細を見る →
           </a>
         </div>
@@ -646,27 +687,35 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
     </section>
 
     <section class="bento-kpi mt-16">
-      <div class="kpi-card">
-        <div class="kpi-label">事件数（${BASIS_LABELS[basis]}）</div>
+      <a class="kpi-card" href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}">
+        <div class="kpi-head">
+          <span class="kpi-label">事件数（${BASIS_LABELS[basis]}）</span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
         <div class="kpi-value num">${counts.cases.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
-      </div>
+      </a>
       <div class="kpi-card">
         <div class="kpi-label">人口 10 万人あたり</div>
         <div class="kpi-value num">${rate != null ? rate.toFixed(2) : "—"}<span class="kpi-unit">${rate != null ? "件" : ""}</span></div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-label">うち判決あり</div>
+      <a class="kpi-card" href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}&has_judgment=1">
+        <div class="kpi-head">
+          <span class="kpi-label">うち判決あり</span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
         <div class="kpi-value num">${(counts.with_judgment ?? 0).toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
-      </div>
+      </a>
     </section>
 
     <div class="bento-equal">
       <section class="card">
-        <h2 class="card-title">法律別の内訳</h2>
+        <h2 class="card-title">法律別の内訳（${name}）</h2>
         ${laws.length
           ? html`<div class="pills">
               ${laws.map(
-                (l) => html`<a class="pill" href="/laws/${encodeURIComponent(l.code)}"
+                (l) => html`<a
+                  class="pill"
+                  href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}&law=${encodeURIComponent(l.code)}"
                   >${l.name}<span class="pill-count">${l.cases}</span></a
                 >`,
               )}
@@ -674,11 +723,13 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
           : html`<p class="muted small mb-0">データがありません。</p>`}
       </section>
       <section class="card">
-        <h2 class="card-title">テーマ別の内訳</h2>
+        <h2 class="card-title">テーマ別の内訳（${name}）</h2>
         ${themes.length
           ? html`<div class="pills">
               ${themes.map(
-                (t) => html`<a class="pill" href="/themes/${encodeURIComponent(t.theme)}"
+                (t) => html`<a
+                  class="pill"
+                  href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}&theme=${encodeURIComponent(t.theme)}"
                   >${t.theme}<span class="pill-count">${t.cases}</span></a
                 >`,
               )}
@@ -691,7 +742,13 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
       ? html`<section class="card mt-16">
           <h2 class="card-title">市区町村別の件数（上位）</h2>
           <div class="pills">
-            ${cities.map((ct) => html`<span class="pill">${ct.city}<span class="pill-count">${ct.cases}</span></span>`)}
+            ${cities.map(
+              (ct) => html`<a
+                class="pill"
+                href="/cases?prefecture=${encodeURIComponent(name)}&pref_basis=${basis}&city=${encodeURIComponent(ct.city)}"
+                >${ct.city}<span class="pill-count">${ct.cases}</span></a
+              >`,
+            )}
           </div>
         </section>`
       : ""}
