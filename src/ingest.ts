@@ -10,7 +10,9 @@ import { detectPii, type Flag } from "./pii";
 import { itemSchema, type IngestItem, type JudgmentItem, type ReportItem } from "./schema";
 
 /** 被害者の情報を特に慎重に扱う罪（性犯罪） */
-export const SEX_CRIME_LAWS = new Set(["sexual_assault", "sexual_assault_injury", "non_consensual_indecency", "child_porn"]);
+export const SEX_CRIME_LAWS = new Set([
+  "sexual_assault", "sexual_assault_injury", "non_consensual_indecency", "child_porn", "sexual_image_recording", "child_solicitation",
+]);
 
 export interface ItemResult {
   index: number;

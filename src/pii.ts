@@ -12,7 +12,7 @@ const NON_NAME_PREFIXES = [
   "職業不詳", "アルバイト", "パート", "自営業", "公務員", "教員", "医師", "看護師", "学生", "高校生",
   "大学生", "中学生", "被告", "容疑者", "外国籍", "住所不定", "店員", "社長", "代表", "役員", "従業員",
   "運転手", "警察官", "巡査", "巡査長", "巡査部長", "警部補", "警部", "当時", "夫", "妻", "父親", "母親",
-  "長男", "長女", "次男", "次女", "祖父", "祖母", "孫",
+  "長男", "長女", "次男", "次女", "祖父", "祖母", "孫", "息子", "娘", "兄", "姉", "弟", "妹",
 ];
 
 // 候補にこれらを含む場合は人名ではない（罪名・裁判所・捜査機関・述語）
@@ -22,7 +22,15 @@ const NAME_SUFFIX_RE = /([一-龯々ヶ]{1,4}[ 　]?[一-龯々ヶぁ-んァ-ヴ
 const PHONE_RE = /0\d{1,4}[-ー－]\d{1,4}[-ー－]\d{3,4}/g;
 const STREET_RE = /(\d+|[一二三四五六七八九十]+)丁目\d+(番地?|[-ー－]\d+)|\d+番地/g;
 // 「高校生」「中学生」のような身分の表記は除き、学校名（「○○中学校」）を検出する
-const SCHOOL_RE = /[^\s、。「」（）()]{1,10}?(小学校|中学校|高等学校|高校|大学|専門学校|特別支援学校)(?!生)/g;
+// 「高校2年」のような学年の表記も除く
+const SCHOOL_RE = /[^\s、。「」（）()]{1,10}?(小学校|中学校|高等学校|高校|大学|専門学校|特別支援学校)(?!生|\d|[１-９一二三]年)/g;
+/** 学校名ではない前置き（「座間市の高校」「県内の公立高校」「元大学職員」）。固有の名前は助詞を含まず、「公立」「元」で終わらない */
+function isSchoolName(match: string, schoolWord: string): boolean {
+  // 最後の助詞より後ろ（「市内の○○中学校」なら「○○」）が学校の名前に当たる部分
+  const name = match.slice(0, match.length - schoolWord.length).split(/[のでにをがはへとも]/).pop() ?? "";
+  if (!name) return false;
+  return !/(公立|私立|国立|元|内|系)$/.test(name);
+}
 
 function scanNames(field: string, text: string, flags: Flag[]): void {
   for (const m of text.matchAll(NAME_SUFFIX_RE)) {
@@ -34,24 +42,36 @@ function scanNames(field: string, text: string, flags: Flag[]): void {
     if (/^[一-龯々ヶ]+[のはにをがでともへ]$/.test(candidate)) continue;
     // 「殺人罪に問われた被告」「那覇地裁の被告」のように、罪名や機関名を含むものは人名ではない
     if (NOT_NAME_WORDS.test(candidate)) continue;
+    // 「黙秘した被告」「盗んだ被告」「組織的で被告」「対応について被告」のように、述語や助詞で終わるものは人名ではない
+    if (/[ただでてにをがはへと]$/.test(candidate)) continue;
+    // 「少年が主犯格の被告」のように、仮名の部分が 2 か所以上に分かれるものは文の一部（名前の仮名は 1 か所にまとまる）
+    if (/[ぁ-ん]+[^ぁ-ん]+[ぁ-ん]/.test(candidate)) continue;
     flags.push({ kind: "person_name", field, match: m[0] });
   }
 }
 
 /** title・summary などの文章を検査する */
 /** 性犯罪で、被告人との関係から被害者が分かってしまう表現 */
-const VICTIM_RELATION_RE = /(実の|義理の)?(娘|長女|次女|三女|孫娘|孫|姪|養女|継娘|連れ子|妹|教え子|生徒|児童|部下|患者|利用者)/g;
+const VICTIM_RELATION_RE = /(実の|義理の)?(娘|長女|次女|三女|孫娘|孫|姪|養女|継娘|連れ子|妹|教え子|部下|患者|利用者)/g;
+// 「児童」「生徒」は、「勤務先の児童」「担任する生徒」のように被告人との関係が書かれているときだけ（「児童ポルノ」「高校生の女子生徒」は対象外）
+const VICTIM_PUPIL_RE = /(勤務先|担任|勤務する学校|勤務していた学校|指導して(い)?た|通う)[^、。]{0,6}?(児童|生徒)/g;
 // 「10代の女性」のような年代は許容し、「16歳」「（16）」のような正確な年齢を検出する
 const EXACT_AGE_RE = /\d{1,3}歳|[(（]\d{1,3}[)）]/g;
 
 /** 年齢表記の直前・直後から、被告人・被疑者の年齢かどうかを判断する */
 function isOffenderAge(text: string, index: number, length: number): boolean {
-  const before = text.slice(Math.max(0, index - 6), index);
-  const after = text.slice(index + length, index + length + 6);
-  // 「被告（45）」「男（45）」「容疑者（45）」
-  if (/(被告人?|容疑者|受刑者|(?<!少)男|男性)$/.test(before)) return true;
-  // 「45歳の男」「45歳の被告」「45歳の会社員の男」
-  if (/^の(.{0,4}の)?(男|被告|容疑者)/.test(after)) return true;
+  const before = text.slice(Math.max(0, index - 10), index);
+  const after = text.slice(index + length, index + length + 16);
+  // 「16歳未満」「13歳未満の」は法律の要件で、被害者の正確な年齢ではない。「年齢を24歳と偽って」も同じ
+  if (/^(未満|以上|以下|と偽)/.test(after)) return true;
+  // 「42歳の映像クリエーターを逮捕」のように、逮捕・起訴された人の年齢
+  if (/^の?[^、。を]{0,12}?を(再)?(逮捕|起訴|書類送検)/.test(after)) return true;
+  // 「被告（45）」「男（45）」「容疑者（45）」「無職の女（23）」（「少女」「長女」などは被害者の側なので除く）
+  if (/(被告人?|容疑者|受刑者|(?<!少)男|男性|(?<![少長次三孫養])女)$/.test(before)) return true;
+  // 「大学生の男2人（いずれも19歳）」
+  if (/男[^、。]{0,4}[（(]いずれも$/.test(before)) return true;
+  // 「45歳の男」「45歳の被告」「45歳の会社員の男」「看護師の24歳男」
+  if (/^(の(.{0,4}の)?)?(男(?!子|児)|被告|容疑者)/.test(after)) return true;
   return false;
 }
 
@@ -76,9 +96,12 @@ export function detectPii(fields: Record<string, string | undefined | null>, opt
         flags.push({ kind: "victim_age", field, match: m[0] });
       }
       for (const m of text.matchAll(VICTIM_RELATION_RE)) flags.push({ kind: "victim_relation", field, match: m[0] });
+      for (const m of text.matchAll(VICTIM_PUPIL_RE)) flags.push({ kind: "victim_relation", field, match: m[0] });
     }
     if (isJuvenile || isSexCrime) {
-      for (const m of text.matchAll(SCHOOL_RE)) flags.push({ kind: "school", field, match: m[0] });
+      for (const m of text.matchAll(SCHOOL_RE)) {
+        if (isSchoolName(m[0], m[1] ?? "")) flags.push({ kind: "school", field, match: m[0] });
+      }
     }
   }
   return flags;
