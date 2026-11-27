@@ -390,6 +390,64 @@ a.kpi-card:hover {
   box-shadow: 0 2px 8px rgba(59, 91, 219, 0.28);
 }
 
+/* Horizontal progress-bar cards (Top themes & Stats occupations) */
+.bar-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.bar-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 13px 15px; border-radius: 14px;
+  background: var(--surface-subtle); border: 1px solid var(--line);
+  color: inherit; text-decoration: none;
+  transition: border-color 0.16s, background 0.16s, transform 0.16s, box-shadow 0.16s;
+}
+.bar-card:hover {
+  text-decoration: none; border-color: var(--accent-border);
+  background: var(--surface-solid); transform: translateY(-1px);
+  box-shadow: var(--accent-glow);
+}
+.bar-card-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+}
+.bar-card-label { font-size: 14px; font-weight: 700; color: var(--text); }
+.bar-card-val { font-size: 16px; font-weight: 800; color: var(--text); white-space: nowrap; }
+.bar-track {
+  width: 100%; height: 7px; border-radius: 999px;
+  background: var(--track); overflow: hidden;
+}
+.bar-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-bright));
+  box-shadow: 0 0 10px rgba(116, 143, 252, 0.35);
+}
+
+/* 100% stacked gender ratio bar */
+.ratio-bar {
+  display: flex; width: 100%; height: 30px; border-radius: 10px; overflow: hidden;
+  background: var(--track); margin-bottom: 14px;
+}
+.ratio-seg {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden;
+  padding: 0 6px; text-decoration: none;
+  transition: filter 0.15s;
+}
+.ratio-seg:hover { filter: brightness(1.1); text-decoration: none; color: #fff; }
+
+/* Nationality horizontal stacked bar chart */
+.nat-list { display: flex; flex-direction: column; gap: 10px; }
+.nat-row {
+  display: grid; grid-template-columns: 112px minmax(0, 1fr) 52px; align-items: center; gap: 10px;
+  padding: 6px 8px; border-radius: 10px; color: inherit; text-decoration: none;
+  transition: background 0.15s;
+}
+.nat-row:hover { background: var(--surface-subtle); text-decoration: none; }
+.nat-label { font-size: 13.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nat-track {
+  display: flex; align-items: center; height: 18px; border-radius: 6px;
+  background: var(--track); overflow: hidden;
+}
+.nat-seg { height: 100%; }
+.nat-count { text-align: right; font-size: 13.5px; font-weight: 700; color: var(--text); }
+
 /* Tags & pills */
 .pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .pill {
@@ -560,6 +618,12 @@ dl.kv dd { margin: 0; color: var(--text); }
   .compact-card { padding: 10px 11px; gap: 4px; }
   .compact-card-title { font-size: 13px; }
   .compact-card-count { font-size: 14.5px; }
+  .bar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .bar-card { padding: 11px 12px; gap: 6px; }
+  .bar-card-label { font-size: 13px; }
+  .bar-card-val { font-size: 14.5px; }
+  .nat-row { grid-template-columns: 88px minmax(0, 1fr) 44px; gap: 8px; padding: 5px 4px; }
+  .nat-label, .nat-count { font-size: 12.5px; }
   .page-h1 { font-size: 20px; }
   .hide-sm { display: none; }
   .drawer-grid { grid-template-columns: 1fr 1fr; }

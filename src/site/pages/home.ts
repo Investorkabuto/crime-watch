@@ -39,7 +39,6 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
     recentCasesRes,
     todayJudgRes,
     recentJudgRes,
-    groupsRes,
   ] = await db.batch([
     db
       .prepare(
@@ -113,21 +112,6 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
          ORDER BY j.decided_on DESC, j.created_at DESC
          LIMIT 4`,
       ),
-    db.prepare(
-      `WITH case_laws AS (
-         SELECT r.case_id, rc.law_code FROM report_charges rc JOIN reports r ON r.id = rc.report_id WHERE rc.law_code IS NOT NULL
-         UNION
-         SELECT j.case_id, jc.law_code FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id WHERE jc.law_code IS NOT NULL AND j.status = 'published'
-       )
-       SELECT l.category, l.group_name, COUNT(DISTINCT c.id) AS cases
-       FROM cases c
-       JOIN case_laws cl ON cl.case_id = c.id
-       JOIN laws l ON l.code = cl.law_code
-       WHERE c.status = 'published'
-       GROUP BY l.category, l.group_name
-       ORDER BY cases DESC, l.group_name ASC
-       LIMIT 8`,
-    ),
   ]);
 
   const kpi = (kpiRes?.results?.[0] ?? { week_reports: 0, week_judgments: 0 }) as {
@@ -160,6 +144,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
       .all<{ theme: string; n: number }>();
     topThemes = fallback.results;
   }
+  const maxThemeCount = Math.max(1, ...topThemes.map((t) => t.n));
 
   type CaseRow = {
     id: string;
@@ -195,8 +180,6 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
   const todayJudgments = (todayJudgRes?.results ?? []) as JudgRow[];
   const shownJudgments = todayJudgments.length > 0 ? todayJudgments : ((recentJudgRes?.results ?? []) as JudgRow[]);
   const judgmentHeading = todayJudgments.length > 0 ? `今日の判決（${formatDateShort(today)}）` : "最近の判決";
-
-  const groups = (groupsRes?.results ?? []) as { category: string; group_name: string; cases: number }[];
 
   const body = html`
     <section class="bento-kpi-2" aria-label="今週のサマリー">
@@ -305,40 +288,28 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         </section>`
       : ""}
 
-    <div class="bento-equal" style="margin-top:0">
-      <section class="card">
-        <h2 class="card-title">
-          <span>件数の多いテーマ（直近 7 日）</span>
-          <a class="small" href="/themes">一覧 →</a>
-        </h2>
-        ${topThemes.length
-          ? html`<div class="pills">
-              ${topThemes.map(
-                (t) =>
-                  html`<a class="pill" href="/themes/${encodeURIComponent(t.theme)}"
-                    >${t.theme}<span class="pill-count">${t.n}</span></a
-                  >`,
-              )}
-            </div>`
-          : html`<p class="muted small mb-0">まだ記録されたテーマがありません。</p>`}
-      </section>
-
-      <section class="card">
-        <h2 class="card-title">
-          <span>法律の分類（上位）</span>
-          <a class="small" href="/laws">法律一覧 →</a>
-        </h2>
-        ${groups.length
-          ? html`<div class="pills">
-              ${groups.map(
-                (g) => html`<a class="pill" href="/cases?group=${encodeURIComponent(g.group_name)}"
-                  >${g.group_name}<span class="pill-count">${g.cases}</span></a
-                >`,
-              )}
-            </div>`
-          : html`<p class="muted small mb-0">まだ分類された事件がありません。</p>`}
-      </section>
-    </div>
+    <section class="card">
+      <h2 class="card-title">
+        <span>件数の多いテーマ（直近 7 日）</span>
+        <a class="small" href="/themes">一覧 →</a>
+      </h2>
+      ${topThemes.length
+        ? html`<div class="bar-grid">
+            ${topThemes.map((t) => {
+              const pct = Math.max(6, Math.round((t.n / maxThemeCount) * 100));
+              return html`<a class="bar-card" href="/themes/${encodeURIComponent(t.theme)}">
+                <div class="bar-card-head">
+                  <span class="bar-card-label">${t.theme}</span>
+                  <span class="bar-card-val num">${t.n}<span class="small muted">件</span></span>
+                </div>
+                <div class="bar-track" aria-hidden="true">
+                  <div class="bar-fill" style="width:${pct}%"></div>
+                </div>
+              </a>`;
+            })}
+          </div>`
+        : html`<p class="muted small mb-0">まだ記録されたテーマがありません。</p>`}
+    </section>
 
     <div class="bento-2col">
       <section class="card">

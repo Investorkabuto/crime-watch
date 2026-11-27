@@ -1,12 +1,14 @@
 // 統計ページ（/stats）と CSV エクスポート（/stats/export.csv）
 import type { Context } from "hono";
-import { html } from "hono/html";
+import { html, raw } from "hono/html";
 import type { Env } from "../../env";
 import { nationalityStats } from "../../natstats";
 import { PREFECTURES } from "../../schema";
-import { csvCell, formatGender } from "../format";
+import { csvCell } from "../format";
 import { renderLayout } from "../layout";
 import { per100k } from "../population";
+
+const AGE_ORDER = ["10歳未満", "10代", "20代", "30代", "40代", "50代", "60代", "70代", "80代", "90代以上", "記載なし"] as const;
 
 function buildBaseWhere(q: { from?: string; to?: string; law?: string; prefecture?: string }) {
   const where = ["c.status = 'published'"];
@@ -60,7 +62,7 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
       GROUP BY raw_p.case_id, raw_p.pk
     )`;
 
-  const [lawsListRes, crossRes, genderRes, ageRes, occRes, natData] = await Promise.all([
+  const [lawsListRes, crossRes, ageGenderRes, occRes, natData] = await Promise.all([
     db.prepare("SELECT code, name FROM laws ORDER BY sort_order").all<{ code: string; name: string }>(),
     db
       .prepare(
@@ -79,19 +81,84 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
       .bind(...binds)
       .all<{ prefecture: string; law_code: string; law_name: string; cases: number }>(),
     db
-      .prepare(`WITH ${peopleCte} SELECT COALESCE(gender, 'unknown') AS gender, COUNT(*) AS people FROM people GROUP BY 1 ORDER BY people DESC`)
+      .prepare(
+        `WITH ${peopleCte}
+         SELECT COALESCE(age_group, '記載なし') AS age_group,
+                COALESCE(gender, 'unknown') AS gender,
+                COUNT(*) AS people
+         FROM people
+         GROUP BY 1, 2`,
+      )
       .bind(...binds)
-      .all<{ gender: string; people: number }>(),
+      .all<{ age_group: string; gender: string; people: number }>(),
     db
-      .prepare(`WITH ${peopleCte} SELECT COALESCE(age_group, '記載なし') AS age_group, COUNT(*) AS people FROM people GROUP BY 1 ORDER BY people DESC`)
-      .bind(...binds)
-      .all<{ age_group: string; people: number }>(),
-    db
-      .prepare(`WITH ${peopleCte} SELECT COALESCE(occupation, '記載なし') AS occupation, COUNT(*) AS people FROM people GROUP BY 1 ORDER BY people DESC LIMIT 15`)
+      .prepare(
+        `WITH ${peopleCte}
+         SELECT COALESCE(occupation, '記載なし') AS occupation, COUNT(*) AS people
+         FROM people
+         GROUP BY 1
+         ORDER BY people DESC
+         LIMIT 16`,
+      )
       .bind(...binds)
       .all<{ occupation: string; people: number }>(),
     nationalityStats(db, { from: q.from, to: q.to, law: q.law, prefecture: q.prefecture }),
   ]);
+
+  // 統計の現在の絞り込み条件を引き継いだ /cases リンク生成ヘルパー
+  const casesHref = (extra: Record<string, string | undefined>) => {
+    const sp = new URLSearchParams();
+    if (q.from) sp.set("from", q.from);
+    if (q.to) sp.set("to", q.to);
+    if (q.law) sp.set("law", q.law);
+    if (q.prefecture) sp.set("prefecture", q.prefecture);
+    for (const [k, v] of Object.entries(extra)) {
+      if (v) sp.set(k, v);
+    }
+    return `/cases?${sp.toString()}`;
+  };
+
+  // 性別×年代マトリクスの構築
+  const matrixMap = new Map<string, { male: number; female: number; unknown: number; total: number }>();
+  let totalMale = 0;
+  let totalFemale = 0;
+  let totalUnknown = 0;
+  for (const r of ageGenderRes.results) {
+    const ag = r.age_group || "記載なし";
+    const row = matrixMap.get(ag) ?? { male: 0, female: 0, unknown: 0, total: 0 };
+    const n = Number(r.people);
+    if (r.gender === "male") {
+      row.male += n;
+      totalMale += n;
+    } else if (r.gender === "female") {
+      row.female += n;
+      totalFemale += n;
+    } else {
+      row.unknown += n;
+      totalUnknown += n;
+    }
+    row.total += n;
+    matrixMap.set(ag, row);
+  }
+  const totalPeople = totalMale + totalFemale + totalUnknown;
+  const pct = (n: number) => (totalPeople > 0 ? Math.round((n / totalPeople) * 100) : 0);
+  const malePct = pct(totalMale);
+  const femalePct = pct(totalFemale);
+  const unknownPct = Math.max(0, 100 - malePct - femalePct);
+
+  const orderedAgeKeys = [
+    ...AGE_ORDER.filter((k) => matrixMap.has(k)),
+    ...[...matrixMap.keys()].filter((k) => !(AGE_ORDER as readonly string[]).includes(k)),
+  ];
+
+  // 職業別バーの最大値
+  const occRows = occRes.results;
+  const maxOcc = Math.max(1, ...occRows.map((o) => o.people));
+
+  // 国籍別（記載ありのみをグラフ描画、「記載なし」はサマリーチップへ）
+  const statedNats = natData.nationalities.filter((r) => r.nationality !== "記載なし");
+  const unstatedNat = natData.nationalities.find((r) => r.nationality === "記載なし");
+  const maxNat = Math.max(1, ...statedNats.map((r) => r.people));
 
   const csvParams = new URLSearchParams();
   if (q.from) csvParams.set("from", q.from);
@@ -144,14 +211,35 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
     </form>
   `;
 
+  const tabScript = `
+(() => {
+  const btns = document.querySelectorAll("[data-stats-tab]");
+  const panels = document.querySelectorAll("[data-stats-panel]");
+  btns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.statsTab;
+      btns.forEach((b) => b.classList.toggle("is-active", b === btn));
+      panels.forEach((p) => { p.style.display = p.dataset.statsPanel === target ? "" : "none"; });
+    });
+  });
+  const moreBtn = document.getElementById("cw-cross-more");
+  if (moreBtn) {
+    moreBtn.addEventListener("click", () => {
+      document.querySelectorAll("tr[data-cross-extra]").forEach((tr) => { tr.style.display = ""; });
+      moreBtn.remove();
+    });
+  }
+})();
+`;
+
   const body = html`
-    <h1 class="page-h1">統計</h1>
-    <p class="page-lead">
-      クロス集計と性別・年代・職業・国籍別の内訳を確認できます（右上の検索ボタンから期間・法律・都道府県で絞り込めます）。
-    </p>
+    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
+      <h1 class="page-h1 mb-0">統計</h1>
+      <a class="pill" href="${csvHref}">CSV ダウンロード →</a>
+    </div>
 
     ${activeChips.length > 0
-      ? html`<section class="card filter-bar" style="margin-bottom:16px">
+      ? html`<section class="card filter-bar" style="margin-bottom:14px">
           <div class="pills">
             ${activeChips.map((chip) => html`<span class="pill pill-accent">${chip}</span>`)}
             <a class="pill" href="/stats">リセット</a>
@@ -159,10 +247,166 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
         </section>`
       : ""}
 
-    <section class="card">
+    <div style="margin-bottom:14px;overflow-x:auto;scrollbar-width:none">
+      <div class="segmented" role="tablist" aria-label="統計の種別">
+        <button type="button" class="is-active" data-stats-tab="demo">性別・年代</button>
+        <button type="button" data-stats-tab="occ">職業</button>
+        <button type="button" data-stats-tab="nat">国籍</button>
+        <button type="button" data-stats-tab="cross">都道府県×法律</button>
+      </div>
+    </div>
+
+    <!-- タブ 1: 性別・年代 -->
+    <section class="card" data-stats-panel="demo">
       <h2 class="card-title">
-        <span>都道府県 × 法律の件数（上位 60 組）</span>
-        <a class="small" href="${csvHref}">CSV ダウンロード →</a>
+        <span>性別・年代別の内訳（人単位）</span>
+        <span class="small muted">タップで事件一覧へ</span>
+      </h2>
+
+      ${totalPeople > 0
+        ? html`<div class="ratio-bar" aria-label="性別比率">
+            ${totalMale > 0
+              ? html`<a
+                  class="ratio-seg"
+                  href="${casesHref({ gender: "male" })}"
+                  style="width:${(totalMale / totalPeople) * 100}%;background:var(--accent)"
+                  title="男性 ${totalMale}人"
+                  >${malePct >= 14 ? `男性 ${malePct}%` : ""}</a
+                >`
+              : ""}
+            ${totalFemale > 0
+              ? html`<a
+                  class="ratio-seg"
+                  href="${casesHref({ gender: "female" })}"
+                  style="width:${(totalFemale / totalPeople) * 100}%;background:#38bdf8"
+                  title="女性 ${totalFemale}人"
+                  >${femalePct >= 14 ? `女性 ${femalePct}%` : ""}</a
+                >`
+              : ""}
+            ${totalUnknown > 0
+              ? html`<a
+                  class="ratio-seg"
+                  href="${casesHref({ gender: "unknown" })}"
+                  style="width:${(totalUnknown / totalPeople) * 100}%;background:var(--muted)"
+                  title="記載なし ${totalUnknown}人"
+                  >${unknownPct >= 10 ? `${unknownPct}%` : ""}</a
+                >`
+              : ""}
+          </div>`
+        : ""}
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>年代</th>
+              <th class="num"><a href="${casesHref({ gender: "male" })}">男性</a></th>
+              <th class="num"><a href="${casesHref({ gender: "female" })}">女性</a></th>
+              <th class="num"><a href="${casesHref({ gender: "unknown" })}">記載なし</a></th>
+              <th class="num">合計</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orderedAgeKeys.length
+              ? orderedAgeKeys.map((ag) => {
+                  const row = matrixMap.get(ag)!;
+                  return html`<tr>
+                    <td><a href="${casesHref({ age_group: ag })}" style="font-weight:600">${ag}</a></td>
+                    <td class="num">
+                      ${row.male > 0
+                        ? html`<a href="${casesHref({ age_group: ag, gender: "male" })}">${row.male.toLocaleString("ja-JP")}</a>`
+                        : html`<span class="muted">0</span>`}
+                    </td>
+                    <td class="num">
+                      ${row.female > 0
+                        ? html`<a href="${casesHref({ age_group: ag, gender: "female" })}">${row.female.toLocaleString("ja-JP")}</a>`
+                        : html`<span class="muted">0</span>`}
+                    </td>
+                    <td class="num">
+                      ${row.unknown > 0
+                        ? html`<a href="${casesHref({ age_group: ag, gender: "unknown" })}">${row.unknown.toLocaleString("ja-JP")}</a>`
+                        : html`<span class="muted">0</span>`}
+                    </td>
+                    <td class="num">
+                      <a href="${casesHref({ age_group: ag })}" style="font-weight:700">${row.total.toLocaleString("ja-JP")}</a>
+                    </td>
+                  </tr>`;
+                })
+              : html`<tr><td colspan="5" class="muted small">該当するデータがありません。</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- タブ 2: 職業 -->
+    <section class="card" data-stats-panel="occ" style="display:none">
+      <h2 class="card-title">
+        <span>職業別の人数（人単位・上位）</span>
+        <span class="small muted">タップで事件一覧へ</span>
+      </h2>
+      ${occRows.length
+        ? html`<div class="bar-grid">
+            ${occRows.map((o) => {
+              const barPct = Math.max(6, Math.round((o.people / maxOcc) * 100));
+              return html`<a class="bar-card" href="${casesHref({ occupation: o.occupation })}">
+                <div class="bar-card-head">
+                  <span class="bar-card-label">${o.occupation}</span>
+                  <span class="bar-card-val num">${o.people.toLocaleString("ja-JP")}<span class="small muted">人</span></span>
+                </div>
+                <div class="bar-track" aria-hidden="true">
+                  <div class="bar-fill" style="width:${barPct}%"></div>
+                </div>
+              </a>`;
+            })}
+          </div>`
+        : html`<p class="muted small mb-0">該当するデータがありません。</p>`}
+    </section>
+
+    <!-- タブ 3: 国籍（グラフ） -->
+    <section class="card" data-stats-panel="nat" style="display:none">
+      <h2 class="card-title">
+        <span>国籍別の人数（記載あり）</span>
+        <span class="pills">
+          <span class="pill">記載あり <strong class="num">${natData.stated_people.toLocaleString("ja-JP")}</strong>人</span>
+          ${unstatedNat
+            ? html`<a class="pill" href="${casesHref({ nationality: "記載なし" })}"
+                >記載なし <strong class="num">${unstatedNat.people.toLocaleString("ja-JP")}</strong>人</a
+              >`
+            : ""}
+        </span>
+      </h2>
+
+      ${statedNats.length
+        ? html`<div class="nat-list" role="list" aria-label="国籍別の積み上げ横棒グラフ">
+              ${statedNats.slice(0, 15).map((r) => {
+                const totalW = Math.max(4, (r.people / maxNat) * 100);
+                const visPct = r.people > 0 ? (r.residence["来日外国人"] / r.people) * totalW : 0;
+                const resPct = r.people > 0 ? (r.residence["定着居住者"] / r.people) * totalW : 0;
+                const unkPct = Math.max(0, totalW - visPct - resPct);
+                return html`<a class="nat-row" href="${casesHref({ nationality: r.nationality })}" role="listitem">
+                  <span class="nat-label">${r.nationality}</span>
+                  <span class="nat-track" title="来日外国人 ${r.residence["来日外国人"]}人 / 定着居住者 ${r.residence["定着居住者"]}人 / 不明 ${r.residence["不明"]}人">
+                    ${visPct > 0 ? html`<span class="nat-seg" style="width:${visPct}%;background:var(--accent)"></span>` : ""}
+                    ${resPct > 0 ? html`<span class="nat-seg" style="width:${resPct}%;background:#38bdf8"></span>` : ""}
+                    ${unkPct > 0 ? html`<span class="nat-seg" style="width:${unkPct}%;background:var(--muted)"></span>` : ""}
+                  </span>
+                  <span class="nat-count num">${r.people.toLocaleString("ja-JP")}人</span>
+                </a>`;
+              })}
+            </div>
+            <div class="chart-legend mt-12" aria-hidden="true">
+              <span class="chart-legend-item"><span class="chart-dot" style="background:var(--accent)"></span>来日外国人</span>
+              <span class="chart-legend-item"><span class="chart-dot" style="background:#38bdf8"></span>定着居住者</span>
+              <span class="chart-legend-item"><span class="chart-dot" style="background:var(--muted)"></span>在留資格不明</span>
+            </div>`
+        : html`<p class="muted small mb-0">国籍の記載があるデータはまだありません。</p>`}
+    </section>
+
+    <!-- タブ 4: 都道府県×法律 -->
+    <section class="card" data-stats-panel="cross" style="display:none">
+      <h2 class="card-title">
+        <span>都道府県 × 法律の件数（上位 ${crossRes.results.length} 組）</span>
+        <a class="small" href="${csvHref}">CSV →</a>
       </h2>
       <div class="table-wrap">
         <table>
@@ -176,16 +420,17 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
           </thead>
           <tbody>
             ${crossRes.results.length
-              ? crossRes.results.map((r) => {
+              ? crossRes.results.map((r, idx) => {
                   const rate = per100k(r.cases, r.prefecture);
-                  const caseParams = new URLSearchParams({ prefecture: r.prefecture, law: r.law_code });
-                  if (q.from) caseParams.set("from", q.from);
-                  if (q.to) caseParams.set("to", q.to);
-                  return html`<tr>
+                  return html`<tr
+                    ${idx >= 20 ? html`data-cross-extra="1" style="display:none"` : ""}
+                  >
                     <td><a href="/prefectures/${encodeURIComponent(r.prefecture)}">${r.prefecture}</a></td>
                     <td><a href="/laws/${encodeURIComponent(r.law_code)}">${r.law_name}</a></td>
                     <td class="num">
-                      <a href="/cases?${caseParams.toString()}" style="font-weight:700">${r.cases.toLocaleString("ja-JP")}</a>
+                      <a href="${casesHref({ prefecture: r.prefecture, law: r.law_code })}" style="font-weight:700"
+                        >${r.cases.toLocaleString("ja-JP")}</a
+                      >
                     </td>
                     <td class="num">${rate != null ? rate.toFixed(2) : "—"}</td>
                   </tr>`;
@@ -194,90 +439,18 @@ export async function renderStatsPage(c: Context<{ Bindings: Env }>) {
           </tbody>
         </table>
       </div>
+      ${crossRes.results.length > 20
+        ? html`<div class="mt-12" style="text-align:center">
+            <button id="cw-cross-more" type="button" class="btn">
+              残り ${crossRes.results.length - 20} 件をすべて表示
+            </button>
+          </div>`
+        : ""}
     </section>
 
-    <div class="bento-equal">
-      <section class="card">
-        <h2 class="card-title">性別・年代別の人数（人単位）</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>性別</th><th class="num">人数</th></tr></thead>
-            <tbody>
-              ${genderRes.results.length
-                ? genderRes.results.map(
-                    (g) => html`<tr><td>${formatGender(g.gender)}</td><td class="num">${g.people.toLocaleString("ja-JP")}</td></tr>`,
-                  )
-                : html`<tr><td colspan="2" class="muted small">データなし</td></tr>`}
-            </tbody>
-          </table>
-        </div>
-        <hr class="divider" />
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>年代</th><th class="num">人数</th></tr></thead>
-            <tbody>
-              ${ageRes.results.length
-                ? ageRes.results.map(
-                    (a) => html`<tr><td>${a.age_group}</td><td class="num">${a.people.toLocaleString("ja-JP")}</td></tr>`,
-                  )
-                : html`<tr><td colspan="2" class="muted small">データなし</td></tr>`}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2 class="card-title">職業別の人数（人単位・上位）</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>職業区分</th><th class="num">人数</th></tr></thead>
-            <tbody>
-              ${occRes.results.length
-                ? occRes.results.map(
-                    (o) => html`<tr><td>${o.occupation}</td><td class="num">${o.people.toLocaleString("ja-JP")}</td></tr>`,
-                  )
-                : html`<tr><td colspan="2" class="muted small">データなし</td></tr>`}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-
-    <section class="card mt-16">
-      <h2 class="card-title">国籍・在留資格別の人数（人単位）</h2>
-      <p class="small muted" style="margin:-6px 0 12px">
-        記事に明記された国籍のみを記録しています。「記載なし」は日本国籍とはみなしません。
-        人口あたりの補正はしていません（合計 ${natData.total_people.toLocaleString("ja-JP")} 人／うち国籍記載あり ${natData.stated_people.toLocaleString("ja-JP")} 人）。
-      </p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>国籍</th>
-              <th class="num">人数</th>
-              <th class="num">事件数</th>
-              <th class="num">来日外国人</th>
-              <th class="num">定着居住者</th>
-              <th class="num hide-sm">在留資格不明</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${natData.nationalities.length
-              ? natData.nationalities.map(
-                  (r) => html`<tr>
-                    <td>${r.nationality}</td>
-                    <td class="num">${r.people.toLocaleString("ja-JP")}</td>
-                    <td class="num">${r.cases.toLocaleString("ja-JP")}</td>
-                    <td class="num">${r.residence["来日外国人"].toLocaleString("ja-JP")}</td>
-                    <td class="num">${r.residence["定着居住者"].toLocaleString("ja-JP")}</td>
-                    <td class="num hide-sm">${r.residence["不明"].toLocaleString("ja-JP")}</td>
-                  </tr>`,
-                )
-              : html`<tr><td colspan="6" class="muted small">該当するデータがありません。</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <script>
+      ${raw(tabScript)}
+    </script>
   `;
 
   return c.html(
@@ -327,7 +500,7 @@ export async function handleStatsCsvExport(c: Context<{ Bindings: Env }>) {
   return new Response(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="crime-watch-stats.csv"',
+      "Content-Disposition": 'attachment; filename="hanzai-watch-stats.csv"',
     },
   });
 }
