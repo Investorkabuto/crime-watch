@@ -13,7 +13,7 @@ export function renderAboutPage(c: Context<{ Bindings: Env }>) {
     <section class="card">
       <h1 class="page-h1">このサイトについて</h1>
       <p class="page-lead">
-        Crime Watch は、日本国内で報道された犯罪および判決（量刑・裁判所・担当裁判官）で明らかになった<strong>事実だけ</strong>を記録し、法律・テーマごとに整理して公開するデータアーカイブです。
+        HANZAI Watch は、日本国内で報道された犯罪および判決（量刑・裁判所・担当裁判官）で明らかになった<strong>事実だけ</strong>を記録し、法律・テーマごとに整理して公開するデータアーカイブです。
       </p>
 
       <h2 class="card-title mt-16">基本方針：事実のみを記載する</h2>
@@ -22,6 +22,13 @@ export function renderAboutPage(c: Context<{ Bindings: Env }>) {
         <li><strong>推測で埋めない</strong>：記事に書かれていない項目（国籍、審級、未報道の段階など）は空のまま「記載なし」とします。</li>
         <li><strong>評価・解釈を加えない</strong>：「甘い」「厳しい」「多い」などの評価語、ランキング、良し悪しを表す色分けは行いません。</li>
         <li><strong>推定無罪の明記</strong>：有罪が確定していない事件には「有罪が確定したものではありません」と表示します。</li>
+      </ul>
+
+      <h2 class="card-title mt-16">集計・件数と人口あたりの算出について</h2>
+      <ul style="padding-left:20px;color:var(--text-sub);margin:0 0 16px">
+        <li><strong>報道にもとづく件数</strong>：サイト内のすべての件数・グラフ・統計は収集した報道・判決にもとづくものであり、警察庁の認知件数や全国の全発生件数ではありません（報道されやすい事件に偏ります）。</li>
+        <li><strong>人口 10 万人あたり件数</strong>：<a href="${POPULATION_SOURCE_URL}" target="_blank" rel="noopener noreferrer">${POPULATION_SOURCE_LABEL}</a>にもとづいて算出しています。</li>
+        <li><strong>都道府県別の基準</strong>：都道府県別一覧・地図は原則として事件の発生地ベースで集計しています。</li>
       </ul>
 
       <h2 class="card-title mt-16">データの収集と AI の誤りについて</h2>
@@ -47,8 +54,8 @@ export function renderAboutPage(c: Context<{ Bindings: Env }>) {
 
   return c.html(
     renderLayout({
-      title: "このサイトについて｜Crime Watch",
-      description: "Crime Watch の基本方針、データの集め方、AI の誤りへの備え、削除・訂正依頼の方法。",
+      title: "このサイトについて｜HANZAI Watch",
+      description: "HANZAI Watch の基本方針、データの集め方、集計と人口推計の算出基準、削除・訂正依頼の方法。",
       canonicalPath: "/about",
       origin,
       body,
@@ -63,7 +70,7 @@ export function renderAboutMetricsPage(c: Context<{ Bindings: Env }>) {
     <section class="card">
       <h1 class="page-h1">この数字について（量刑指標の定義と限界）</h1>
       <p class="page-lead">
-        Crime Watch で表示する量刑バー・統計指標の計算式と、数値を読み取るうえでの前提・限界を公開します。
+        HANZAI Watch で表示する量刑バー・統計指標の計算式と、数値を読み取るうえでの前提・限界を公開します。
       </p>
 
       <h2 class="card-title mt-16">判決 1 件ごとの指標</h2>
@@ -113,7 +120,7 @@ export function renderAboutMetricsPage(c: Context<{ Bindings: Env }>) {
 
   return c.html(
     renderLayout({
-      title: "この数字について｜Crime Watch",
+      title: "この数字について｜HANZAI Watch",
       description: "量刑バー・求刑比・法定刑内の位置・執行猶予率の計算式と、報道データの限界について。",
       canonicalPath: "/about/metrics",
       origin,
@@ -229,8 +236,8 @@ function renderContactView(c: Context<{ Bindings: Env }>, state: ContactViewStat
 
   return c.html(
     renderLayout({
-      title: "削除・訂正の依頼｜Crime Watch",
-      description: "Crime Watch に掲載された事件・判決データの訂正や削除を依頼できます。",
+      title: "削除・訂正の依頼｜HANZAI Watch",
+      description: "HANZAI Watch に掲載された事件・判決データの訂正や削除を依頼できます。",
       canonicalPath: "/contact",
       origin,
       body,

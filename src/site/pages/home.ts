@@ -1,18 +1,46 @@
-// トップページ（/）— コンパクトなモダン Bento ダッシュボード
+// トップページ（/）— コンパクトなモダン Bento ダッシュボード＋直近 1 年積み上げ棒グラフ
 import type { Context } from "hono";
 import { html } from "hono/html";
 import type { Env } from "../../env";
 import { daysAgoJst, formatDateShort, formatDemand, formatSentence, todayJst } from "../format";
 import { renderLayout } from "../layout";
-import { renderMiniSentencingBar } from "../svg";
+import { renderMiniSentencingBar, renderStackedMonthlyBarChart } from "../svg";
+
+/** JST の今月を含む直近 12 ヶ月の YYYY-MM リスト（昇順） */
+function last12Months(todayIso: string): string[] {
+  const [yStr, mStr] = todayIso.split("-");
+  let y = Number(yStr);
+  let m = Number(mStr);
+  const out: string[] = [];
+  for (let i = 0; i < 12; i++) {
+    out.unshift(`${y}-${String(m).padStart(2, "0")}`);
+    m -= 1;
+    if (m === 0) {
+      m = 12;
+      y -= 1;
+    }
+  }
+  return out;
+}
 
 export async function renderHomePage(c: Context<{ Bindings: Env }>) {
   const db = c.env.DB;
   const origin = new URL(c.req.url).origin;
   const today = todayJst();
   const weekAgo = daysAgoJst(7);
+  const months12 = last12Months(today);
+  const firstMonth = months12[0]!;
 
-  const [kpiRes, topThemesRes, recentCasesRes, todayJudgRes, recentJudgRes, groupsRes] = await db.batch([
+  const [
+    kpiRes,
+    monthlyReportsRes,
+    monthlyJudgRes,
+    topThemesRes,
+    recentCasesRes,
+    todayJudgRes,
+    recentJudgRes,
+    groupsRes,
+  ] = await db.batch([
     db
       .prepare(
         `SELECT
@@ -20,6 +48,24 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
            (SELECT COUNT(*) FROM judgments j JOIN cases c ON c.id = j.case_id WHERE c.status = 'published' AND j.status = 'published' AND j.decided_on >= ?) AS week_judgments`,
       )
       .bind(weekAgo, weekAgo),
+    db
+      .prepare(
+        `SELECT substr(r.reported_at, 1, 7) AS month, COUNT(*) AS n
+         FROM reports r
+         JOIN cases c ON c.id = r.case_id
+         WHERE c.status = 'published' AND substr(r.reported_at, 1, 7) >= ?
+         GROUP BY 1`,
+      )
+      .bind(firstMonth),
+    db
+      .prepare(
+        `SELECT substr(j.decided_on, 1, 7) AS month, COUNT(*) AS n
+         FROM judgments j
+         JOIN cases c ON c.id = j.case_id
+         WHERE c.status = 'published' AND j.status = 'published' AND substr(j.decided_on, 1, 7) >= ?
+         GROUP BY 1`,
+      )
+      .bind(firstMonth),
     db
       .prepare(
         `SELECT ct.theme, COUNT(DISTINCT c.id) AS n
@@ -88,9 +134,22 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
     week_reports: number;
     week_judgments: number;
   };
+
+  const reportMonthMap = new Map(
+    ((monthlyReportsRes?.results ?? []) as { month: string; n: number }[]).map((r) => [r.month, Number(r.n)]),
+  );
+  const judgMonthMap = new Map(
+    ((monthlyJudgRes?.results ?? []) as { month: string; n: number }[]).map((r) => [r.month, Number(r.n)]),
+  );
+  const stackedSeries = months12.map((month) => ({
+    month,
+    cases: reportMonthMap.get(month) ?? 0,
+    judgments: judgMonthMap.get(month) ?? 0,
+  }));
+  const stackedChart = renderStackedMonthlyBarChart(stackedSeries);
+
   let topThemes = (topThemesRes?.results ?? []) as { theme: string; n: number }[];
   if (topThemes.length === 0) {
-    // 直近 7 日にデータがなければ全期間の上位 6 テーマを表示
     const fallback = await db
       .prepare(
         `SELECT ct.theme, COUNT(DISTINCT c.id) AS n
@@ -156,9 +215,6 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         <div class="kpi-value num">${kpi.week_judgments.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
       </a>
     </section>
-    <p class="small muted" style="margin: -4px 2px 14px;">
-      ※ 収集した報道・判決にもとづく件数であり、全国の全発生件数ではありません。
-    </p>
 
     <section class="quick-grid" aria-label="メニューショートカット">
       <a class="quick-tile" href="/prefectures">
@@ -217,7 +273,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         </div>
         <div>
           <div class="quick-title">法律・量刑</div>
-          <div class="quick-desc">法定刑と量刑分布を比較</div>
+          <div class="quick-desc">条文・法定刑と量刑分布</div>
         </div>
       </a>
       <a class="quick-tile" href="/stats">
@@ -235,6 +291,19 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         </div>
       </a>
     </section>
+
+    ${stackedChart
+      ? html`<section class="card" style="margin-bottom:16px">
+          <h2 class="card-title">
+            <span>直近 1 年の犯罪・判決件数推移</span>
+            <span class="chart-legend" aria-hidden="true">
+              <span class="chart-legend-item"><span class="chart-dot" style="background:var(--accent)"></span>犯罪報道</span>
+              <span class="chart-legend-item"><span class="chart-dot" style="background:#38bdf8"></span>判決</span>
+            </span>
+          </h2>
+          ${stackedChart}
+        </section>`
+      : ""}
 
     <div class="bento-equal" style="margin-top:0">
       <section class="card">
@@ -331,14 +400,14 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
 
   return c.html(
     renderLayout({
-      title: "Crime Watch — 日本の犯罪報道・判決データアーカイブ",
+      title: "HANZAI Watch — 日本の犯罪報道・判決データアーカイブ",
       activeNav: "home",
       canonicalPath: "/",
       origin,
       jsonLd: {
         "@context": "https://schema.org",
         "@type": "WebSite",
-        name: "Crime Watch",
+        name: "HANZAI Watch",
         url: origin,
         description: "日本国内の犯罪報道と判決（量刑・裁判所・担当裁判官）を事実のみに基づいて記録・公開するデータアーカイブ。",
       },

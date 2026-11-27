@@ -277,25 +277,18 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
 
   const body = html`
     <h1 class="page-h1">事件一覧</h1>
-    <p class="page-lead">報道・判決から記録された事件を条件で絞り込めます（該当 <strong class="num">${total.toLocaleString("ja-JP")}</strong> 件）。</p>
+    <p class="page-lead">該当 <strong class="num">${total.toLocaleString("ja-JP")}</strong> 件（右上の検索ボタンから条件を絞り込めます）。</p>
 
-    <section class="card filter-bar">
-      <button type="button" class="filter-bar-btn" data-open-search>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
-        </svg>
-        <span>検索・詳細絞り込み</span>
-        ${activeChips.length > 0 ? html`<span class="search-badge num">${activeChips.length}</span>` : ""}
-      </button>
-      ${activeChips.length > 0
-        ? html`<div class="pills">
+    ${activeChips.length > 0
+      ? html`<section class="card filter-bar" style="margin-bottom:16px">
+          <div class="pills">
             ${activeChips.map((chip) => html`<span class="pill pill-accent">${chip}</span>`)}
             <a class="pill" href="/cases">リセット</a>
-          </div>`
-        : html`<span class="small muted">キーワード・都道府県・法律・テーマ・期間で絞り込めます</span>`}
-    </section>
+          </div>
+        </section>`
+      : ""}
 
-    <section class="card mt-16">
+    <section class="card">
       ${cases.length
         ? html`<ul class="feed">
             ${cases.map((k) => {
@@ -332,7 +325,7 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
 
   return c.html(
     renderLayout({
-      title: "事件一覧｜Crime Watch",
+      title: "事件一覧｜HANZAI Watch",
       description: "日本国内の犯罪報道・判決を都道府県・法律・テーマ・進み具合で検索・絞り込みできます。",
       activeNav: "cases",
       canonicalPath: "/cases",
@@ -411,7 +404,7 @@ export async function renderCaseDetailPage(c: Context<{ Bindings: Env }>) {
   if (!kase) {
     return c.html(
       renderLayout({
-        title: "事件が見つかりません｜Crime Watch",
+        title: "事件が見つかりません｜HANZAI Watch",
         activeNav: "cases",
         origin,
         noindex: true,
@@ -429,7 +422,7 @@ export async function renderCaseDetailPage(c: Context<{ Bindings: Env }>) {
   if (kase.status !== "published") {
     return c.html(
       renderLayout({
-        title: "この事件は非公開になりました｜Crime Watch",
+        title: "この事件は非公開になりました｜HANZAI Watch",
         activeNav: "cases",
         origin,
         noindex: true,
@@ -784,7 +777,7 @@ export async function renderCaseDetailPage(c: Context<{ Bindings: Env }>) {
   const hasAppealJudgment = judgments.some((j) => j.instance === "控訴審" || j.instance === "上告審");
   const canonicalPath = `/cases/${encodeURIComponent(kase.id)}`;
   const shareUrl = `${origin}${canonicalPath}`;
-  const shareHashtags = ["CrimeWatch", ...themeNames.slice(0, 2).map((t) => t.replace(/[・\s]/g, ""))]
+  const shareHashtags = ["HANZAIWatch", ...themeNames.slice(0, 2).map((t) => t.replace(/[・\s]/g, ""))]
     .map((h) => `#${h}`)
     .join(" ");
   const shareText = `${kase.title}（${kase.progress ?? kase.latest_stage}） ${shareHashtags}`;
@@ -1161,7 +1154,7 @@ export async function renderCaseDetailPage(c: Context<{ Bindings: Env }>) {
 
   return c.html(
     renderLayout({
-      title: `${kase.title}｜${kase.prefecture ?? "日本"}・${kase.progress ?? kase.latest_stage}｜Crime Watch`,
+      title: `${kase.title}｜${kase.prefecture ?? "日本"}・${kase.progress ?? kase.latest_stage}｜HANZAI Watch`,
       description: ogDesc,
       activeNav: "cases",
       canonicalPath,

@@ -67,7 +67,7 @@ export async function handleMainFeed(c: Context<{ Bindings: Env }>) {
   }>();
 
   const xml = buildRss({
-    title: "Crime Watch — 最新の事件・判決",
+    title: "HANZAI Watch — 最新の事件・判決",
     link: origin,
     description: "日本国内の犯罪報道・判決の最新更新（過去データの取り込み分を除く）",
     items: results.map((r) => ({
@@ -106,7 +106,7 @@ export async function handleThemeFeed(c: Context<{ Bindings: Env }>) {
     }>();
 
   const xml = buildRss({
-    title: `Crime Watch — ${theme}`,
+    title: `HANZAI Watch — ${theme}`,
     link: `${origin}/themes/${encodeURIComponent(theme)}`,
     description: `テーマ「${theme}」に該当する事件・判決の更新`,
     items: results.map((r) => ({
@@ -175,7 +175,7 @@ export async function handleCaseFeed(c: Context<{ Bindings: Env }>) {
   ].sort((a, b) => b.pubDate.localeCompare(a.pubDate));
 
   const xml = buildRss({
-    title: `${kase.title} — 続報｜Crime Watch`,
+    title: `${kase.title} — 続報｜HANZAI Watch`,
     link: caseUrl,
     description: `${kase.title}の報道・判決の時系列更新`,
     items,

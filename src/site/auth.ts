@@ -42,7 +42,7 @@ function renderLoginPage(nextPath: string, errorMessage?: string) {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="robots" content="noindex, nofollow" />
-        <title>Crime Watch（非公開プレビュー）</title>
+        <title>HANZAI Watch（非公開プレビュー）</title>
         <style>
           :root {
             --bg: #f8f9fb; --surface: #ffffff; --text: #0f172a; --muted: #64748b;
@@ -83,7 +83,7 @@ function renderLoginPage(nextPath: string, errorMessage?: string) {
       </head>
       <body>
         <main class="card">
-          <h1>Crime Watch</h1>
+          <h1>HANZAI Watch</h1>
           <p>現在は非公開の試行期間中です。閲覧用トークンを入力して続行してください。</p>
           ${errorMessage ? html`<div class="err">${errorMessage}</div>` : ""}
           <form method="post" action="/_auth/login">

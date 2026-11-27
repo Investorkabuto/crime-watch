@@ -37,19 +37,15 @@ export async function renderThemesListPage(c: Context<{ Bindings: Env }>) {
       const items = THEMES.filter((t) => THEME_META[t].group === group);
       return html`<section class="card">
         <h2 class="card-title">${group}</h2>
-        <div class="bento-3col">
+        <div class="compact-grid">
           ${items.map((t) => {
             const n = countMap.get(t) ?? 0;
-            return html`<a
-              class="card"
-              style="padding:14px 16px;margin:0;text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:6px"
-              href="/themes/${encodeURIComponent(t)}"
-            >
-              <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-                <strong style="font-size:15px">${t}</strong>
-                <span class="num" style="font-size:18px;font-weight:800">${n}<span class="small muted">件</span></span>
+            return html`<a class="compact-card" href="/themes/${encodeURIComponent(t)}">
+              <div class="compact-card-head">
+                <span class="compact-card-title">${t}</span>
+                <span class="compact-card-count num">${n}<span class="small muted">件</span></span>
               </div>
-              <div class="small muted">${THEME_META[t].criteria}</div>
+              <div class="compact-card-desc">${THEME_META[t].criteria}</div>
             </a>`;
           })}
         </div>
@@ -59,7 +55,7 @@ export async function renderThemesListPage(c: Context<{ Bindings: Env }>) {
 
   return c.html(
     renderLayout({
-      title: "テーマ一覧｜Crime Watch",
+      title: "テーマ一覧｜HANZAI Watch",
       description: "闇バイト・特殊詐欺・飲酒運転・性犯罪などのテーマごとに事件と判決を一覧できます。",
       activeNav: "themes",
       canonicalPath: "/themes",
@@ -78,7 +74,7 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
   if (!THEME_SET.has(theme)) {
     return c.html(
       renderLayout({
-        title: "テーマが見つかりません｜Crime Watch",
+        title: "テーマが見つかりません｜HANZAI Watch",
         activeNav: "themes",
         origin,
         noindex: true,
@@ -301,7 +297,7 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
 
   return c.html(
     renderLayout({
-      title: `${theme}の事件 ${summary.total_cases}件｜Crime Watch`,
+      title: `${theme}の事件 ${summary.total_cases}件｜HANZAI Watch`,
       description: `${theme}に関する報道・判決データ（${summary.total_cases}件、うち判決${summary.with_judgment}件）。${meta.criteria}`,
       activeNav: "themes",
       canonicalPath,
@@ -310,7 +306,7 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
       jsonLd: {
         "@context": "https://schema.org",
         "@type": "Dataset",
-        name: `Crime Watch — ${theme}`,
+        name: `HANZAI Watch — ${theme}`,
         description: meta.criteria,
         url: `${origin}${canonicalPath}`,
       },

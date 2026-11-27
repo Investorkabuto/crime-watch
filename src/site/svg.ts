@@ -172,6 +172,72 @@ export function renderMonthlyBarChart(series: { month: string; cases: number }[]
   );
 }
 
+/** 直近 1 年の月別「犯罪（報道）件数＋判決件数」積み上げ棒グラフ SVG（トップページ用） */
+export function renderStackedMonthlyBarChart(series: { month: string; cases: number; judgments: number }[]) {
+  if (series.length === 0) return null;
+  const W = 640;
+  const H = 192;
+  const padL = 32;
+  const padR = 14;
+  const padT = 22;
+  const padB = 30;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const maxVal = Math.max(1, ...series.map((s) => s.cases + s.judgments));
+  const step = plotW / series.length;
+  const barW = Math.max(12, Math.min(34, step * 0.56));
+
+  const gridLines = [0.25, 0.5, 0.75, 1]
+    .map((ratio) => {
+      const y = Math.round((padT + plotH * (1 - ratio)) * 10) / 10;
+      const val = Math.round(maxVal * ratio);
+      return (
+        `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--line)" stroke-width="1" stroke-dasharray="3 3" />` +
+        (ratio === 0.5 || ratio === 1
+          ? `<text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="10" fill="var(--muted)">${val}</text>`
+          : "")
+      );
+    })
+    .join("");
+
+  const bars = series
+    .map((s, i) => {
+      const total = s.cases + s.judgments;
+      const x = Math.round((padL + i * step + (step - barW) / 2) * 10) / 10;
+      const caseH = s.cases > 0 ? Math.max(2, Math.round((s.cases / maxVal) * plotH)) : 0;
+      const judgH = s.judgments > 0 ? Math.max(2, Math.round((s.judgments / maxVal) * plotH)) : 0;
+      const caseY = padT + plotH - caseH;
+      const judgY = caseY - judgH;
+      const label = s.month.slice(5).replace(/^0/, "") + "月";
+      const topY = total > 0 ? judgY : padT + plotH;
+
+      return (
+        `<g>` +
+        `<title>${escXml(s.month)} — 犯罪報道 ${s.cases}件 / 判決 ${s.judgments}件（計 ${total}件）</title>` +
+        (caseH > 0
+          ? `<rect x="${x}" y="${caseY}" width="${barW}" height="${caseH}" rx="${judgH > 0 ? 2 : 4}" fill="var(--accent)" opacity="0.88" />`
+          : "") +
+        (judgH > 0
+          ? `<rect x="${x}" y="${judgY}" width="${barW}" height="${judgH}" rx="4" fill="#38bdf8" opacity="0.92" />`
+          : "") +
+        (total > 0
+          ? `<text x="${x + barW / 2}" y="${Math.max(12, topY - 5)}" text-anchor="middle" font-size="10.5" font-weight="600" fill="var(--text-sub)">${total}</text>`
+          : "") +
+        `<text x="${x + barW / 2}" y="${H - 10}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${escXml(label)}</text>` +
+        `</g>`
+      );
+    })
+    .join("");
+
+  return raw(
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="直近1年の犯罪件数と判決件数の月別積み上げ棒グラフ" style="display:block;height:auto">` +
+      gridLines +
+      `<line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="var(--line-strong)" stroke-width="1" />` +
+      bars +
+      `</svg>`,
+  );
+}
+
 /** 固定 OGP 画像（SVG。テーマ別・デフォルト用） */
 export function renderOgSvg(title: string, subtitle: string): string {
   const safeTitle = escXml(title.slice(0, 36));
@@ -181,7 +247,7 @@ export function renderOgSvg(title: string, subtitle: string): string {
   <rect width="1200" height="630" fill="#F8F9FB"/>
   <rect x="56" y="56" width="1088" height="518" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="2"/>
   <rect x="104" y="108" width="12" height="44" rx="6" fill="#3B5BDB"/>
-  <text x="132" y="142" font-family="system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif" font-size="34" font-weight="700" fill="#0F172A">Crime Watch</text>
+  <text x="132" y="142" font-family="system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif" font-size="34" font-weight="700" fill="#0F172A">HANZAI Watch</text>
   <text x="104" y="290" font-family="system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif" font-size="54" font-weight="700" fill="#0F172A">${safeTitle}</text>
   <text x="104" y="366" font-family="system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif" font-size="28" fill="#475569">${safeSub}</text>
   <text x="104" y="516" font-family="system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif" font-size="22" fill="#64748B">報道・判決で明らかになった事実を法律・テーマごとに記録</text>

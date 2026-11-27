@@ -361,7 +361,7 @@ describe("管理 API と管理画面", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-robots-tag")).toContain("noindex");
     const html = await res.text();
-    expect(html).toContain("Crime Watch 管理");
+    expect(html).toContain("HANZAI Watch 管理");
     expect(html).not.toContain("muse-r-");
   });
 });
