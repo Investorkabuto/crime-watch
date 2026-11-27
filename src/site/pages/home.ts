@@ -2,9 +2,18 @@
 import type { Context } from "hono";
 import { html } from "hono/html";
 import type { Env } from "../../env";
-import { daysAgoJst, formatDateShort, formatDemand, formatSentence, todayJst } from "../format";
+import {
+  caseActivityBadge,
+  daysAgoJst,
+  formatDateShort,
+  formatDemand,
+  formatPct,
+  formatSentence,
+  stageBadgeClass,
+  todayJst,
+} from "../format";
 import { renderLayout } from "../layout";
-import { renderMiniSentencingBar, renderStackedMonthlyBarChart } from "../svg";
+import { renderStackedMonthlyBarChart } from "../svg";
 
 /** JST の今月を含む直近 12 ヶ月の YYYY-MM リスト（昇順） */
 function last12Months(todayIso: string): string[] {
@@ -28,6 +37,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
   const origin = new URL(c.req.url).origin;
   const today = todayJst();
   const weekAgo = daysAgoJst(7);
+  const recentThreshold = daysAgoJst(3);
   const months12 = last12Months(today);
   const firstMonth = months12[0]!;
 
@@ -79,7 +89,9 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
     db
       .prepare(
         `SELECT c.id, c.title, c.prefecture, c.latest_stage, c.progress, c.latest_at, c.occurred_on,
-                (SELECT group_concat(DISTINCT ct.theme) FROM case_themes ct WHERE ct.case_id = c.id) AS themes
+                (SELECT group_concat(DISTINCT ct.theme) FROM case_themes ct WHERE ct.case_id = c.id) AS themes,
+                ((SELECT COUNT(*) FROM reports r WHERE r.case_id = c.id)
+                  + (SELECT COUNT(*) FROM judgments j WHERE j.case_id = c.id AND j.status = 'published')) AS entry_count
          FROM cases c
          WHERE c.status = 'published'
          ORDER BY c.latest_at DESC
@@ -90,7 +102,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         `SELECT j.id, j.case_id, j.title, j.decided_on, j.sentence_type, j.term_months,
                 j.indeterminate_min_months, j.indeterminate_max_months, j.suspended_months, j.probation,
                 j.fine_yen, j.protective_disposition, j.demand_type, j.demand_months, j.demand_fine_yen,
-                j.position_in_range, co.name AS court_name
+                j.position_in_range, j.ratio_to_demand, co.name AS court_name
          FROM judgments j
          JOIN cases c ON c.id = j.case_id
          JOIN courts co ON co.id = j.court_id
@@ -104,7 +116,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         `SELECT j.id, j.case_id, j.title, j.decided_on, j.sentence_type, j.term_months,
                 j.indeterminate_min_months, j.indeterminate_max_months, j.suspended_months, j.probation,
                 j.fine_yen, j.protective_disposition, j.demand_type, j.demand_months, j.demand_fine_yen,
-                j.position_in_range, co.name AS court_name
+                j.position_in_range, j.ratio_to_demand, co.name AS court_name
          FROM judgments j
          JOIN cases c ON c.id = j.case_id
          JOIN courts co ON co.id = j.court_id
@@ -155,6 +167,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
     latest_at: string;
     occurred_on: string | null;
     themes: string | null;
+    entry_count: number;
   };
   const recentCases = (recentCasesRes?.results ?? []) as CaseRow[];
 
@@ -175,6 +188,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
     demand_months: number | null;
     demand_fine_yen: number | null;
     position_in_range: number | null;
+    ratio_to_demand: number | null;
     court_name: string;
   };
   const todayJudgments = (todayJudgRes?.results ?? []) as JudgRow[];
@@ -182,6 +196,19 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
   const judgmentHeading = todayJudgments.length > 0 ? `今日の判決（${formatDateShort(today)}）` : "最近の判決";
 
   const body = html`
+    ${stackedChart
+      ? html`<section class="card" style="margin-bottom:14px">
+          <h2 class="card-title">
+            <span>直近 1 年の犯罪・判決件数推移</span>
+            <span class="chart-legend" aria-hidden="true">
+              <span class="chart-legend-item"><span class="chart-dot" style="background:var(--accent)"></span>犯罪報道</span>
+              <span class="chart-legend-item"><span class="chart-dot" style="background:#38bdf8"></span>判決</span>
+            </span>
+          </h2>
+          ${stackedChart}
+        </section>`
+      : ""}
+
     <section class="bento-kpi-2" aria-label="今週のサマリー">
       <a class="kpi-card" href="/cases?from=${encodeURIComponent(weekAgo)}">
         <div class="kpi-head">
@@ -241,7 +268,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
           <span class="kpi-arrow" aria-hidden="true">→</span>
         </div>
         <div>
-          <div class="quick-title">テーマ別</div>
+          <div class="quick-title">犯罪別</div>
           <div class="quick-desc">詐欺・交通・判決など切り口別</div>
         </div>
       </a>
@@ -269,24 +296,27 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
           <span class="kpi-arrow" aria-hidden="true">→</span>
         </div>
         <div>
-          <div class="quick-title">統計・CSV</div>
+          <div class="quick-title">統計</div>
           <div class="quick-desc">クロス集計と属性別内訳</div>
         </div>
       </a>
+      <a class="quick-tile" href="/themes/${encodeURIComponent("外国人犯罪")}">
+        <div class="quick-tile-top">
+          <span class="quick-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
+        <div>
+          <div class="quick-title">外国人犯罪</div>
+          <div class="quick-desc">国籍別集計と該当事件</div>
+        </div>
+      </a>
     </section>
-
-    ${stackedChart
-      ? html`<section class="card" style="margin-bottom:16px">
-          <h2 class="card-title">
-            <span>直近 1 年の犯罪・判決件数推移</span>
-            <span class="chart-legend" aria-hidden="true">
-              <span class="chart-legend-item"><span class="chart-dot" style="background:var(--accent)"></span>犯罪報道</span>
-              <span class="chart-legend-item"><span class="chart-dot" style="background:#38bdf8"></span>判決</span>
-            </span>
-          </h2>
-          ${stackedChart}
-        </section>`
-      : ""}
 
     <section class="card">
       <h2 class="card-title">
@@ -321,12 +351,18 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
           ? html`<ul class="feed">
               ${recentCases.map((k) => {
                 const themes = k.themes ? k.themes.split(",").slice(0, 2) : [];
+                const act = caseActivityBadge(k.entry_count, k.latest_at, recentThreshold);
                 return html`<li class="feed-item">
                   <div class="feed-meta">
-                    <span class="pill pill-accent">${k.latest_stage}</span>
+                    <span class="pill ${stageBadgeClass(k.latest_stage)}">${k.latest_stage}</span>
+                    ${act.kind === "new"
+                      ? html`<span class="badge-new">${act.label}</span>`
+                      : act.kind === "update"
+                        ? html`<span class="badge-update">${act.label}</span>`
+                        : ""}
                     ${k.progress ? html`<span class="small muted">${k.progress}</span>` : ""}
                     <span>${k.prefecture ?? "場所不明"}</span>
-                    <span class="num">${formatDateShort(k.latest_at)}</span>
+                    <span class="num">${act.datePrefix} ${formatDateShort(k.latest_at)}</span>
                   </div>
                   <a class="feed-title" href="/cases/${encodeURIComponent(k.id)}">${k.title}</a>
                   ${themes.length
@@ -350,16 +386,21 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         ${shownJudgments.length
           ? html`<ul class="feed">
               ${shownJudgments.map((j) => {
-                const mini = renderMiniSentencingBar(j.position_in_range, j.suspended_months != null);
                 const dem = formatDemand(j);
+                const isCustodial = j.sentence_type === "拘禁刑" || j.sentence_type === "懲役" || j.sentence_type === "禁錮";
+                const execBadge = isCustodial ? (j.suspended_months != null ? "執行猶予" : "実刑") : null;
                 return html`<li class="feed-item">
                   <div class="feed-meta">
+                    ${execBadge ? html`<span class="pill ${j.suspended_months != null ? "" : "pill-accent"}">${execBadge}</span>` : ""}
                     <span>${j.court_name}</span>
                     <span class="num">${formatDateShort(j.decided_on)}</span>
                   </div>
                   <a class="feed-title" href="/cases/${encodeURIComponent(j.case_id)}">${formatSentence(j)}</a>
-                  ${dem ? html`<div class="small muted">求刑: ${dem}</div>` : ""}
-                  ${mini ? html`<div class="mt-8">${mini}</div>` : ""}
+                  ${dem
+                    ? html`<div class="small muted num">
+                        求刑 ${dem}${j.ratio_to_demand != null ? `（求刑の ${formatPct(j.ratio_to_demand)}）` : ""}
+                      </div>`
+                    : ""}
                   <div class="small muted">${j.title}</div>
                 </li>`;
               })}

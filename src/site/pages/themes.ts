@@ -4,7 +4,7 @@ import { html } from "hono/html";
 import type { Env } from "../../env";
 import { nationalityStats } from "../../natstats";
 import { THEMES, type Theme } from "../../themes";
-import { formatDateShort, THEME_GROUPS, THEME_META } from "../format";
+import { formatDateShort, stageBadgeClass, THEME_GROUPS, THEME_META } from "../format";
 import { renderLayout } from "../layout";
 import { renderMonthlyBarChart } from "../svg";
 
@@ -282,7 +282,7 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
             ${cases.map(
               (k) => html`<li class="feed-item">
                 <div class="feed-meta">
-                  <span class="pill pill-accent">${k.latest_stage}</span>
+                  <span class="pill ${stageBadgeClass(k.latest_stage)}">${k.latest_stage}</span>
                   ${k.progress ? html`<span class="small muted">${k.progress}</span>` : ""}
                   <span>${k.prefecture ?? "場所不明"}</span>
                   <span class="num">${formatDateShort(k.latest_at)}</span>

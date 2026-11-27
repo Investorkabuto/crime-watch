@@ -89,10 +89,11 @@ const SITE_CSS = `
   }
 }
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; }
 body {
   margin: 0;
   min-height: 100dvh;
+  touch-action: manipulation;
   background-color: var(--bg);
   background-image: var(--bg-glow);
   background-attachment: fixed;
@@ -319,9 +320,9 @@ a.kpi-card:hover {
 .kpi-unit { font-size: 14px; font-weight: 600; color: var(--muted); margin-left: 3px; }
 .kpi-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
-/* Dashboard quick-access tiles */
+/* Dashboard quick-access tiles (3x2 on desktop, 2x3 on mobile) */
 .quick-grid {
-  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px;
 }
 .quick-tile {
   display: flex; flex-direction: column; justify-content: space-between; gap: 8px;
@@ -466,6 +467,64 @@ a.kpi-card:hover {
   background: var(--surface-solid); padding: 1px 6px; border-radius: var(--radius-pill);
 }
 
+/* Stage color-coded badges (light & dark balanced) */
+.pill-stage-occurred {
+  background: rgba(100, 116, 139, 0.14); color: #475569; border-color: rgba(100, 116, 139, 0.3); font-weight: 700;
+}
+.pill-stage-arrest {
+  background: rgba(245, 158, 11, 0.14); color: #b45309; border-color: rgba(245, 158, 11, 0.35); font-weight: 700;
+}
+.pill-stage-indict {
+  background: rgba(59, 91, 219, 0.13); color: #3b5bdb; border-color: rgba(59, 91, 219, 0.32); font-weight: 700;
+}
+.pill-stage-judgment {
+  background: rgba(14, 165, 233, 0.14); color: #0369a1; border-color: rgba(14, 165, 233, 0.35); font-weight: 700;
+}
+.pill-stage-final {
+  background: rgba(16, 185, 129, 0.14); color: #047857; border-color: rgba(16, 185, 129, 0.35); font-weight: 700;
+}
+.pill-stage-other {
+  background: rgba(139, 92, 246, 0.13); color: #6d28d9; border-color: rgba(139, 92, 246, 0.32); font-weight: 700;
+}
+.badge-new {
+  display: inline-flex; align-items: center; padding: 2px 7px; border-radius: var(--radius-pill);
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.04em;
+  background: rgba(16, 185, 129, 0.16); color: #047857; border: 1px solid rgba(16, 185, 129, 0.35);
+}
+.badge-update {
+  display: inline-flex; align-items: center; padding: 2px 7px; border-radius: var(--radius-pill);
+  font-size: 10.5px; font-weight: 700;
+  background: rgba(14, 165, 233, 0.14); color: #0369a1; border: 1px solid rgba(14, 165, 233, 0.32);
+}
+@media (prefers-color-scheme: dark) {
+  .pill-stage-occurred { background: rgba(148, 163, 184, 0.16); color: #cbd5e1; border-color: rgba(148, 163, 184, 0.3); }
+  .pill-stage-arrest { background: rgba(251, 191, 36, 0.16); color: #fbbf24; border-color: rgba(251, 191, 36, 0.36); }
+  .pill-stage-indict { background: rgba(116, 143, 252, 0.18); color: #91a7ff; border-color: rgba(116, 143, 252, 0.38); }
+  .pill-stage-judgment { background: rgba(56, 189, 248, 0.16); color: #38bdf8; border-color: rgba(56, 189, 248, 0.38); }
+  .pill-stage-final { background: rgba(52, 211, 153, 0.16); color: #34d399; border-color: rgba(52, 211, 153, 0.38); }
+  .pill-stage-other { background: rgba(167, 139, 250, 0.16); color: #c4b5fd; border-color: rgba(167, 139, 250, 0.36); }
+  .badge-new { background: rgba(52, 211, 153, 0.18); color: #34d399; border-color: rgba(52, 211, 153, 0.38); }
+  .badge-update { background: rgba(56, 189, 248, 0.16); color: #38bdf8; border-color: rgba(56, 189, 248, 0.36); }
+}
+
+/* Collapsible statutory article */
+.article-details {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface-subtle);
+  overflow: hidden;
+}
+.article-summary {
+  list-style: none; cursor: pointer; padding: 10px 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 13px; font-weight: 700; color: var(--accent); user-select: none;
+}
+.article-summary::-webkit-details-marker { display: none; }
+.article-summary::after { content: "▾"; font-size: 13px; transition: transform 0.18s; }
+.article-details[open] .article-summary::after { transform: rotate(180deg); }
+.article-body {
+  padding: 0 14px 14px; border-top: 1px solid var(--line);
+  padding-top: 10px; color: var(--text-sub); white-space: pre-line; font-size: 13px; line-height: 1.75;
+}
+
 /* Stage / presumption badge */
 .presumption-box {
   display: inline-flex; align-items: center; gap: 6px;
@@ -605,11 +664,15 @@ dl.kv dd { margin: 0; color: var(--text); }
   .search-trigger .kbd { display: none; }
   .container { padding: 14px 12px 36px; }
   .card { padding: 16px; border-radius: 16px; }
-  .bento-kpi { grid-template-columns: 1fr; gap: 8px; }
+  .bento-kpi { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .bento-kpi .kpi-card { display: block; padding: 11px 10px; }
+  .bento-kpi .kpi-label { font-size: 11px; }
+  .bento-kpi .kpi-value { font-size: 20px; }
+  .bento-kpi .kpi-unit { font-size: 11.5px; }
+  .bento-kpi .kpi-sub { font-size: 10.5px; }
   .bento-kpi-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .bento-kpi-2 .kpi-card { padding: 14px 14px; }
   .bento-kpi-2 .kpi-value { font-size: 26px; }
-  .bento-kpi .kpi-card { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 16px; }
   .kpi-value { font-size: 24px; }
   .quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .quick-tile { padding: 12px 13px; gap: 6px; }

@@ -4,7 +4,7 @@ import { html, raw } from "hono/html";
 import type { Env } from "../../env";
 import { PREF_EXPR, prefectureStats } from "../../prefstats";
 import { PREFECTURES } from "../../schema";
-import { formatDateShort, formatPct } from "../format";
+import { formatDateShort, formatPct, stageBadgeClass } from "../format";
 import { JAPAN_VIEWBOX, MAP_INSET_LINES, MAP_PREFECTURES, MAP_REGIONS, type RegionId } from "../japan-map-data";
 import { renderLayout } from "../layout";
 import { per100k } from "../population";
@@ -727,7 +727,7 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
             ${cases.map(
               (k) => html`<li class="feed-item">
                 <div class="feed-meta">
-                  <span class="pill pill-accent">${k.latest_stage}</span>
+                  <span class="pill ${stageBadgeClass(k.latest_stage)}">${k.latest_stage}</span>
                   ${k.city ? html`<span>${k.city}</span>` : ""}
                   <span class="num">${formatDateShort(k.latest_at)}</span>
                 </div>

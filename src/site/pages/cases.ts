@@ -7,6 +7,8 @@ import { PREF_EXPR, type PrefBasis } from "../../prefstats";
 import { PREFECTURES } from "../../schema";
 import { THEMES } from "../../themes";
 import {
+  caseActivityBadge,
+  daysAgoJst,
   formatAge,
   formatDateJa,
   formatDateShort,
@@ -22,6 +24,7 @@ import {
   formatYen,
   isFinalized,
   safeHref,
+  stageBadgeClass,
 } from "../format";
 import { renderLayout } from "../layout";
 import { renderSentencingBar } from "../svg";
@@ -172,13 +175,16 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
       : "c.latest_at DESC";
 
   const whereSql = where.join(" AND ");
+  const recentThreshold = daysAgoJst(3);
   const [countRes, rowsRes, lawsRes] = await db.batch([
     db.prepare(`SELECT COUNT(*) AS n FROM cases c WHERE ${whereSql}`).bind(...binds),
     db
       .prepare(
         `SELECT c.id, c.title, c.summary, c.prefecture, c.city, c.occurred_on, c.latest_stage, c.progress, c.latest_at,
                 c.is_juvenile,
-                (SELECT group_concat(DISTINCT ct.theme) FROM case_themes ct WHERE ct.case_id = c.id) AS themes
+                (SELECT group_concat(DISTINCT ct.theme) FROM case_themes ct WHERE ct.case_id = c.id) AS themes,
+                ((SELECT COUNT(*) FROM reports r WHERE r.case_id = c.id)
+                  + (SELECT COUNT(*) FROM judgments j WHERE j.case_id = c.id AND j.status = 'published')) AS entry_count
          FROM cases c
          WHERE ${whereSql}
          ORDER BY ${orderBy}
@@ -202,6 +208,7 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
     latest_at: string;
     is_juvenile: number;
     themes: string | null;
+    entry_count: number;
   }[];
   const laws = (lawsRes?.results ?? []) as { code: string; name: string; group_name: string }[];
   const groups = [...new Set(laws.map((l) => l.group_name))];
@@ -360,13 +367,19 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
         ? html`<ul class="feed">
             ${cases.map((k) => {
               const themes = k.themes ? k.themes.split(",").slice(0, 4) : [];
+              const act = caseActivityBadge(k.entry_count, k.latest_at, recentThreshold);
               return html`<li class="feed-item">
                 <div class="feed-meta">
-                  <span class="pill pill-accent">${k.latest_stage}</span>
+                  <span class="pill ${stageBadgeClass(k.latest_stage)}">${k.latest_stage}</span>
+                  ${act.kind === "new"
+                    ? html`<span class="badge-new">${act.label}</span>`
+                    : act.kind === "update"
+                      ? html`<span class="badge-update">${act.label}</span>`
+                      : ""}
                   ${k.progress ? html`<span class="small muted">${k.progress}</span>` : ""}
                   <span>${k.prefecture ?? "場所不明"}${k.city ? ` ${k.city}` : ""}</span>
                   ${k.occurred_on ? html`<span class="num">発生 ${formatDateShort(k.occurred_on)}</span>` : ""}
-                  <span class="num">更新 ${formatDateShort(k.latest_at)}</span>
+                  <span class="num">${act.datePrefix} ${formatDateShort(k.latest_at)}</span>
                 </div>
                 <a class="feed-title" href="/cases/${encodeURIComponent(k.id)}">${k.title}</a>
                 <p class="small muted mb-0" style="margin-top:2px">${k.summary.slice(0, 140)}${k.summary.length > 140 ? "…" : ""}</p>

@@ -1,5 +1,6 @@
 import { env, SELF } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
+import { LAW_TEXTS } from "../src/site/law-texts";
 import { signedIngest, view } from "./helpers";
 
 describe("公開サイト（S1 + S2）", () => {
@@ -297,18 +298,39 @@ describe("公開サイト（S1 + S2）", () => {
     expect(themesListHtml).toContain("compact-grid");
     expect(aboutHtml).not.toMatch(/muse/i);
 
-    // TOP: HANZAI Watch・積み上げ棒グラフ・バー付きテーマ・法律分類削除・AI注意帯削除・ナビ削除・フッター整理
+    // TOP: HANZAI Watch・最上部グラフ・外国人犯罪タイル・犯罪別/統計・バー付きテーマ・ダブルタップズーム防止
     const homeHtml = await (await view("/")).text();
     expect(homeHtml).toContain("HANZAI Watch");
+    expect(homeHtml).toContain("touch-action: manipulation");
     expect(homeHtml).not.toContain("累計事件数");
     expect(homeHtml).not.toContain("法律の分類（上位）");
+    expect(homeHtml).toContain("犯罪別");
+    expect(homeHtml).not.toContain("統計・CSV");
     expect(homeHtml).toContain("bar-grid");
     expect(homeHtml).toContain("直近 1 年の犯罪・判決件数推移");
+    expect(homeHtml.indexOf("直近 1 年の犯罪・判決件数推移")).toBeLessThan(homeHtml.indexOf("今週の報道"));
     expect(homeHtml).toContain("都道府県マップ");
+    expect(homeHtml).toContain("外国人犯罪");
+    expect(homeHtml).toContain(`/themes/${encodeURIComponent("外国人犯罪")}`);
+    expect(homeHtml).toContain("求刑の 75%");
+    expect(homeHtml).toContain("pill-stage-judgment");
+    expect(homeHtml).toContain("続報 2");
     expect(homeHtml).toContain('id="cw-search-drawer"');
     expect(homeHtml).not.toContain('class="ai-notice"');
     expect(homeHtml).not.toContain('aria-label="メインナビゲーション"');
     expect(homeHtml).not.toContain('href="/about/metrics"');
+
+    // DB の全法律に LAW_TEXTS（要約＋条文）が漏れなく定義されていること
+    const allDbLaws = await env.DB.prepare("SELECT code FROM laws").all<{ code: string }>();
+    const missingLawTexts = allDbLaws.results.map((r) => r.code).filter((c) => !(c in LAW_TEXTS));
+    expect(missingLawTexts).toEqual([]);
+
+    // 法律詳細ページに折りたたみ条文と法定刑の範囲内の量刑分布グラフが表示されること
+    const lawDetailHtml = await (await view("/laws/robbery_injury")).text();
+    expect(lawDetailHtml).toContain('class="article-details"');
+    expect(lawDetailHtml).toContain("条文全文を見る");
+    expect(lawDetailHtml).toContain("量刑の分布（法定刑の範囲内");
+    expect(lawDetailHtml).toContain("法定刑の範囲内における量刑分布グラフ");
 
     // 都道府県ページにリアル日本地図 SVG と地域ズーム・地図外ドック・テーブル併用があること
     const prefsHtml = await (await view("/prefectures")).text();
@@ -327,7 +349,7 @@ describe("公開サイト（S1 + S2）", () => {
     const cityCasesHtml = await (await view(`/cases?prefecture=${encodeURIComponent("東京都")}&city=${encodeURIComponent("江東区")}`)).text();
     expect(cityCasesHtml).toContain("強盗致傷事件で被告に拘禁刑9年の判決");
 
-    // 統計ページ: 4タブ切替・性別×年代クロス表リンク・職業バーカード・国籍グラフ
+    // 統計ページ: 4タブ切替・戻る時タブ保持・性別×年代クロス表リンク・職業バーカード・国籍グラフ（記載あり/なしチップ削除）
     const statsHtml = await (await view("/stats")).text();
     expect(statsHtml).toContain('id="cw-search-drawer"');
     expect(statsHtml).not.toContain('class="filter-bar-btn"');
@@ -335,6 +357,8 @@ describe("公開サイト（S1 + S2）", () => {
     expect(statsHtml).toContain('data-stats-tab="occ"');
     expect(statsHtml).toContain('data-stats-tab="nat"');
     expect(statsHtml).toContain('data-stats-tab="cross"');
+    expect(statsHtml).toContain("cw_stats_tab");
+    expect(statsHtml).not.toContain("国籍別の人数（記載あり）");
     expect(statsHtml).toContain("ratio-bar");
     expect(statsHtml).toContain(`/cases?age_group=${encodeURIComponent("20代")}&amp;gender=male`);
     expect(statsHtml).toContain(`/cases?occupation=${encodeURIComponent("無職")}`);
