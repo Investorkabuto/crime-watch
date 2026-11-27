@@ -17,14 +17,31 @@ export interface AggregateResult {
   law_rows: number;
   dist_rows: number;
   computed_at: string;
+  skipped?: boolean;
 }
 
 /**
  * agg_theme_monthly / agg_law_monthly / agg_sentence_dist を作り直す。
  * 非公開の事件（status != 'published'）は集計に含めない。
+ * Cron 実行時（force !== true）は前回集計以降の更新がなければスキップする。
  */
-export async function recomputeAggregates(db: D1Database): Promise<AggregateResult> {
+export async function recomputeAggregates(db: D1Database, opts?: { force?: boolean }): Promise<AggregateResult> {
   const computedAt = nowIso();
+
+  if (!opts?.force) {
+    const [metaRow, caseRow, ingestRow] = await db.batch([
+      db.prepare("SELECT value FROM agg_meta WHERE key = 'last_aggregated_at'"),
+      db.prepare("SELECT MAX(updated_at) AS max_at FROM cases"),
+      db.prepare("SELECT MAX(received_at) AS max_at FROM ingest_logs"),
+    ]);
+    const lastAgg = (metaRow?.results?.[0] as { value?: string } | undefined)?.value;
+    const maxCase = (caseRow?.results?.[0] as { max_at?: string | null } | undefined)?.max_at;
+    const maxIngest = (ingestRow?.results?.[0] as { max_at?: string | null } | undefined)?.max_at;
+    const latestChange = [maxCase, maxIngest].filter((v): v is string => !!v).sort().pop();
+    if (lastAgg && (!latestChange || latestChange <= lastAgg)) {
+      return { theme_rows: 0, law_rows: 0, dist_rows: 0, computed_at: lastAgg, skipped: true };
+    }
+  }
 
   // 1. 刑期分布は分位点が必要なため判決の刑期をアプリ側で計算して入れ直す
   const { results: jRows } = await db

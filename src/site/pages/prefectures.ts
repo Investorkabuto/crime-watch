@@ -582,6 +582,10 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
   const prefCond = name === "不明" ? `${PREF_EXPR.occurrence} IS NULL` : `${PREF_EXPR.occurrence} = ?`;
   const binds = name === "不明" ? [] : [name];
 
+  const hasAgg = Boolean(
+    await db.prepare("SELECT 1 AS ok FROM agg_meta WHERE key = 'last_aggregated_at' LIMIT 1").first(),
+  );
+
   const [countRes, lawsRes, themesRes, citiesRes, casesRes] = await db.batch([
     db
       .prepare(
@@ -590,27 +594,45 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
          FROM cases c WHERE c.status = 'published' AND ${prefCond}`,
       )
       .bind(...binds),
-    db
-      .prepare(
-        `WITH case_laws AS (
-           SELECT r.case_id, rc.law_code FROM report_charges rc JOIN reports r ON r.id = rc.report_id WHERE rc.law_code IS NOT NULL
-           UNION
-           SELECT j.case_id, jc.law_code FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id WHERE jc.law_code IS NOT NULL AND j.status = 'published'
-         )
-         SELECT l.code, l.name, COUNT(DISTINCT c.id) AS cases
-         FROM cases c JOIN case_laws cl ON cl.case_id = c.id JOIN laws l ON l.code = cl.law_code
-         WHERE c.status = 'published' AND ${prefCond}
-         GROUP BY l.code, l.name ORDER BY cases DESC LIMIT 12`,
-      )
-      .bind(...binds),
-    db
-      .prepare(
-        `SELECT ct.theme, COUNT(DISTINCT c.id) AS cases
-         FROM cases c JOIN case_themes ct ON ct.case_id = c.id
-         WHERE c.status = 'published' AND ${prefCond}
-         GROUP BY ct.theme ORDER BY cases DESC LIMIT 12`,
-      )
-      .bind(...binds),
+    hasAgg
+      ? db
+          .prepare(
+            `SELECT a.law_code AS code, l.name, SUM(a.cases) AS cases
+             FROM agg_law_monthly a JOIN laws l ON l.code = a.law_code
+             WHERE a.prefecture = ?
+             GROUP BY a.law_code, l.name ORDER BY cases DESC LIMIT 12`,
+          )
+          .bind(name)
+      : db
+          .prepare(
+            `WITH case_laws AS (
+               SELECT r.case_id, rc.law_code FROM report_charges rc JOIN reports r ON r.id = rc.report_id WHERE rc.law_code IS NOT NULL
+               UNION
+               SELECT j.case_id, jc.law_code FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id WHERE jc.law_code IS NOT NULL AND j.status = 'published'
+             )
+             SELECT l.code, l.name, COUNT(DISTINCT c.id) AS cases
+             FROM cases c JOIN case_laws cl ON cl.case_id = c.id JOIN laws l ON l.code = cl.law_code
+             WHERE c.status = 'published' AND ${prefCond}
+             GROUP BY l.code, l.name ORDER BY cases DESC LIMIT 12`,
+          )
+          .bind(...binds),
+    hasAgg
+      ? db
+          .prepare(
+            `SELECT theme, SUM(cases) AS cases
+             FROM agg_theme_monthly
+             WHERE prefecture = ?
+             GROUP BY theme ORDER BY cases DESC LIMIT 12`,
+          )
+          .bind(name)
+      : db
+          .prepare(
+            `SELECT ct.theme, COUNT(DISTINCT c.id) AS cases
+             FROM cases c JOIN case_themes ct ON ct.case_id = c.id
+             WHERE c.status = 'published' AND ${prefCond}
+             GROUP BY ct.theme ORDER BY cases DESC LIMIT 12`,
+          )
+          .bind(...binds),
     db
       .prepare(
         `SELECT c.city, COUNT(*) AS cases

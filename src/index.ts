@@ -412,7 +412,7 @@ app.post("/api/v1/admin/aliases", async (c) => {
 });
 
 /** 公開サイト用の集計テーブルを再計算する（Cron と同じ処理） */
-app.post("/api/v1/admin/recompute-aggregates", async (c) => c.json(await recomputeAggregates(c.env.DB)));
+app.post("/api/v1/admin/recompute-aggregates", async (c) => c.json(await recomputeAggregates(c.env.DB, { force: true })));
 
 // ===== 公開サイト（SSR + SVG + RSS + sitemap）=====
 app.route("/", siteApp);

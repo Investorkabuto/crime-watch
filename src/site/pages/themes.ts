@@ -16,13 +16,19 @@ export async function renderThemesListPage(c: Context<{ Bindings: Env }>) {
   const db = c.env.DB;
   const origin = new URL(c.req.url).origin;
 
+  const hasAgg = Boolean(
+    await db.prepare("SELECT 1 AS ok FROM agg_meta WHERE key = 'last_aggregated_at' LIMIT 1").first(),
+  );
+
   const { results } = await db
     .prepare(
-      `SELECT ct.theme, COUNT(DISTINCT c.id) AS cases
-       FROM case_themes ct
-       JOIN cases c ON c.id = ct.case_id
-       WHERE c.status = 'published'
-       GROUP BY ct.theme`,
+      hasAgg
+        ? "SELECT theme, SUM(cases) AS cases FROM agg_theme_monthly GROUP BY theme"
+        : `SELECT ct.theme, COUNT(DISTINCT c.id) AS cases
+           FROM case_themes ct
+           JOIN cases c ON c.id = ct.case_id
+           WHERE c.status = 'published'
+           GROUP BY ct.theme`,
     )
     .all<{ theme: string; cases: number }>();
 
@@ -92,6 +98,10 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
   const db = c.env.DB;
   const meta = THEME_META[theme as Theme];
 
+  const hasAgg = Boolean(
+    await db.prepare("SELECT 1 AS ok FROM agg_meta WHERE key = 'last_aggregated_at' LIMIT 1").first(),
+  );
+
   const [summaryRes, monthlyRes, prefRes, progRes, casesRes] = await db.batch([
     db
       .prepare(
@@ -103,27 +113,39 @@ export async function renderThemeDetailPage(c: Context<{ Bindings: Env }>) {
          WHERE c.status = 'published' AND ct.theme = ?`,
       )
       .bind(theme),
-    db
-      .prepare(
-        `SELECT substr(COALESCE(c.occurred_on, c.latest_at), 1, 7) AS month, COUNT(DISTINCT c.id) AS cases
-         FROM cases c
-         JOIN case_themes ct ON ct.case_id = c.id
-         WHERE c.status = 'published' AND ct.theme = ?
-         GROUP BY 1
-         ORDER BY 1 ASC`,
-      )
-      .bind(theme),
-    db
-      .prepare(
-        `SELECT COALESCE(c.prefecture, '不明') AS prefecture, COUNT(DISTINCT c.id) AS cases
-         FROM cases c
-         JOIN case_themes ct ON ct.case_id = c.id
-         WHERE c.status = 'published' AND ct.theme = ?
-         GROUP BY 1
-         ORDER BY cases DESC, prefecture ASC
-         LIMIT 10`,
-      )
-      .bind(theme),
+    hasAgg
+      ? db
+          .prepare(
+            `SELECT month, SUM(cases) AS cases FROM agg_theme_monthly WHERE theme = ? GROUP BY month ORDER BY month ASC`,
+          )
+          .bind(theme)
+      : db
+          .prepare(
+            `SELECT substr(COALESCE(c.occurred_on, c.latest_at), 1, 7) AS month, COUNT(DISTINCT c.id) AS cases
+             FROM cases c
+             JOIN case_themes ct ON ct.case_id = c.id
+             WHERE c.status = 'published' AND ct.theme = ?
+             GROUP BY 1
+             ORDER BY 1 ASC`,
+          )
+          .bind(theme),
+    hasAgg
+      ? db
+          .prepare(
+            `SELECT prefecture, SUM(cases) AS cases FROM agg_theme_monthly WHERE theme = ? GROUP BY prefecture ORDER BY cases DESC, prefecture ASC LIMIT 10`,
+          )
+          .bind(theme)
+      : db
+          .prepare(
+            `SELECT COALESCE(c.prefecture, '不明') AS prefecture, COUNT(DISTINCT c.id) AS cases
+             FROM cases c
+             JOIN case_themes ct ON ct.case_id = c.id
+             WHERE c.status = 'published' AND ct.theme = ?
+             GROUP BY 1
+             ORDER BY cases DESC, prefecture ASC
+             LIMIT 10`,
+          )
+          .bind(theme),
     db
       .prepare(
         `SELECT COALESCE(c.progress, '不明') AS progress, COUNT(DISTINCT c.id) AS cases
