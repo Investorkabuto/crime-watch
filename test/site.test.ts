@@ -297,10 +297,12 @@ describe("公開サイト（S1 + S2）", () => {
     expect(themesListHtml).toContain("compact-grid");
     expect(aboutHtml).not.toMatch(/muse/i);
 
-    // TOP: HANZAI Watch・積み上げ棒グラフ・AI注意帯削除・ナビ削除・フッター整理
+    // TOP: HANZAI Watch・積み上げ棒グラフ・バー付きテーマ・法律分類削除・AI注意帯削除・ナビ削除・フッター整理
     const homeHtml = await (await view("/")).text();
     expect(homeHtml).toContain("HANZAI Watch");
     expect(homeHtml).not.toContain("累計事件数");
+    expect(homeHtml).not.toContain("法律の分類（上位）");
+    expect(homeHtml).toContain("bar-grid");
     expect(homeHtml).toContain("直近 1 年の犯罪・判決件数推移");
     expect(homeHtml).toContain("都道府県マップ");
     expect(homeHtml).toContain('id="cw-search-drawer"');
@@ -325,12 +327,28 @@ describe("公開サイト（S1 + S2）", () => {
     const cityCasesHtml = await (await view(`/cases?prefecture=${encodeURIComponent("東京都")}&city=${encodeURIComponent("江東区")}`)).text();
     expect(cityCasesHtml).toContain("強盗致傷事件で被告に拘禁刑9年の判決");
 
-    // 事件一覧・統計で重複するページ内検索ボタンがなく、統一検索ドロワーが使われていること
-    const casesHtml = await (await view("/cases")).text();
-    expect(casesHtml).toContain('id="cw-search-drawer"');
-    expect(casesHtml).not.toContain('class="filter-bar-btn"');
+    // 統計ページ: 4タブ切替・性別×年代クロス表リンク・職業バーカード・国籍グラフ
     const statsHtml = await (await view("/stats")).text();
     expect(statsHtml).toContain('id="cw-search-drawer"');
     expect(statsHtml).not.toContain('class="filter-bar-btn"');
+    expect(statsHtml).toContain('data-stats-tab="demo"');
+    expect(statsHtml).toContain('data-stats-tab="occ"');
+    expect(statsHtml).toContain('data-stats-tab="nat"');
+    expect(statsHtml).toContain('data-stats-tab="cross"');
+    expect(statsHtml).toContain("ratio-bar");
+    expect(statsHtml).toContain(`/cases?age_group=${encodeURIComponent("20代")}&amp;gender=male`);
+    expect(statsHtml).toContain(`/cases?occupation=${encodeURIComponent("無職")}`);
+
+    // /cases の性別・年代・職業フィルタが動作すること
+    const attrCasesHtml = await (await view(`/cases?gender=male&age_group=${encodeURIComponent("20代")}&occupation=${encodeURIComponent("無職")}`)).text();
+    expect(attrCasesHtml).toContain("強盗致傷事件で被告に拘禁刑9年の判決");
+    expect(attrCasesHtml).toContain("性別: 男性");
+    expect(attrCasesHtml).toContain("年代: 20代");
+    expect(attrCasesHtml).toContain("職業: 無職");
+
+    // 事件一覧で重複するページ内検索ボタンがなく、統一検索ドロワーが使われていること
+    const casesHtml = await (await view("/cases")).text();
+    expect(casesHtml).toContain('id="cw-search-drawer"');
+    expect(casesHtml).not.toContain('class="filter-bar-btn"');
   });
 });

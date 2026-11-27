@@ -88,6 +88,65 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
     where.push("c.city = ?");
     binds.push(q.city.trim());
   }
+  if (q.gender) {
+    if (q.gender === "unknown") {
+      where.push(
+        `(EXISTS (SELECT 1 FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = c.id AND (p.gender IS NULL OR p.gender = 'unknown'))
+          OR EXISTS (SELECT 1 FROM judgments j WHERE j.case_id = c.id AND j.status = 'published' AND (j.defendant_gender IS NULL OR j.defendant_gender = 'unknown')))`,
+      );
+    } else if (q.gender === "male" || q.gender === "female") {
+      where.push(
+        `(EXISTS (SELECT 1 FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = c.id AND p.gender = ?)
+          OR EXISTS (SELECT 1 FROM judgments j WHERE j.case_id = c.id AND j.status = 'published' AND j.defendant_gender = ?))`,
+      );
+      binds.push(q.gender, q.gender);
+    }
+  }
+  if (q.age_group?.trim()) {
+    const ag = q.age_group.trim();
+    if (ag === "記載なし") {
+      where.push(
+        `(EXISTS (SELECT 1 FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = c.id AND (p.age_group IS NULL OR p.age_group = ''))
+          OR EXISTS (SELECT 1 FROM judgments j WHERE j.case_id = c.id AND j.status = 'published' AND (j.defendant_age_group IS NULL OR j.defendant_age_group = '')))`,
+      );
+    } else {
+      where.push(
+        `(EXISTS (SELECT 1 FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = c.id AND p.age_group = ?)
+          OR EXISTS (SELECT 1 FROM judgments j WHERE j.case_id = c.id AND j.status = 'published' AND j.defendant_age_group = ?))`,
+      );
+      binds.push(ag, ag);
+    }
+  }
+  if (q.occupation?.trim()) {
+    const occ = q.occupation.trim();
+    if (occ === "記載なし") {
+      where.push(
+        `(EXISTS (SELECT 1 FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = c.id AND (p.occupation IS NULL OR p.occupation = ''))
+          OR EXISTS (SELECT 1 FROM judgments j WHERE j.case_id = c.id AND j.status = 'published' AND (j.defendant_occupation IS NULL OR j.defendant_occupation = '')))`,
+      );
+    } else {
+      where.push(
+        `(EXISTS (SELECT 1 FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = c.id AND p.occupation = ?)
+          OR EXISTS (SELECT 1 FROM judgments j WHERE j.case_id = c.id AND j.status = 'published' AND j.defendant_occupation = ?))`,
+      );
+      binds.push(occ, occ);
+    }
+  }
+  if (q.nationality?.trim()) {
+    const nat = q.nationality.trim();
+    if (nat === "記載なし") {
+      where.push(
+        `(EXISTS (SELECT 1 FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = c.id AND (p.nationality IS NULL OR p.nationality = ''))
+          OR EXISTS (SELECT 1 FROM judgments j WHERE j.case_id = c.id AND j.status = 'published' AND (j.defendant_nationality IS NULL OR j.defendant_nationality = '')))`,
+      );
+    } else {
+      where.push(
+        `(EXISTS (SELECT 1 FROM report_persons p JOIN reports r ON r.id = p.report_id WHERE r.case_id = c.id AND p.nationality = ?)
+          OR EXISTS (SELECT 1 FROM judgments j WHERE j.case_id = c.id AND j.status = 'published' AND j.defendant_nationality = ?))`,
+      );
+      binds.push(nat, nat);
+    }
+  }
   if (q.progress) {
     where.push("c.progress = ?");
     binds.push(q.progress);
@@ -156,6 +215,10 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
       prefecture: q.prefecture,
       pref_basis: q.pref_basis,
       city: q.city,
+      gender: q.gender,
+      age_group: q.age_group,
+      occupation: q.occupation,
+      nationality: q.nationality,
       progress: q.progress,
       from: q.from,
       to: q.to,
@@ -172,6 +235,10 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
     activeChips.push(`${q.prefecture}${q.pref_basis && q.pref_basis !== "occurrence" ? `(${bLabel})` : ""}`);
   }
   if (q.city?.trim()) activeChips.push(q.city.trim());
+  if (q.gender) activeChips.push(`性別: ${q.gender === "unknown" ? "記載なし" : formatGender(q.gender)}`);
+  if (q.age_group?.trim()) activeChips.push(`年代: ${q.age_group.trim()}`);
+  if (q.occupation?.trim()) activeChips.push(`職業: ${q.occupation.trim()}`);
+  if (q.nationality?.trim()) activeChips.push(`国籍: ${q.nationality.trim()}`);
   if (q.law) activeChips.push(laws.find((l) => l.code === q.law)?.name ?? q.law);
   if (q.group) activeChips.push(q.group);
   if (q.theme) activeChips.push(`#${q.theme}`);
