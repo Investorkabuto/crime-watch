@@ -115,8 +115,8 @@ export function classifyCharges(charges: string[], aliases: AliasMap): Classifie
       const { text, modifier } = extractModifier(normalized);
       let hit = lookup(text, aliases);
       let finalText = text;
-      // 「有印私文書偽造・同行使」「通貨偽造・同行使」の「同〜」は、直前の罪状と同じ法律の罪
-      if (!hit && /^同/.test(text) && out.length > 0) {
+      // 「有印私文書偽造・同行使」「通貨偽造・同行使」の「同〜」と、「有印私文書偽造・行使」の「行使」は、直前の罪状と同じ法律の罪
+      if (!hit && (/^同/.test(text) || /^行使$/.test(text)) && out.length > 0) {
         const prev = out[out.length - 1]!;
         if (prev.lawCode) {
           out.push({ raw, text: prev.text + "・" + text, lawCode: prev.lawCode, modifier, matchedAlias: prev.matchedAlias });

@@ -12,6 +12,7 @@ import { ADMIN_PAGE } from "./admin-page";
 import { PREF_EXPR, prefectureStats, type PrefBasis } from "./prefstats";
 import { nationalityStats } from "./natstats";
 import { recomputeThemes } from "./themes";
+import { listRejections } from "./rejections";
 
 // D1 の 1 行あたりの上限（約 2MB）に収まるよう、原本の保存を考えて 1MB までにする
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -297,6 +298,12 @@ app.get("/api/v1/judgments", async (c) => {
 
 // ===== 管理・試行用 =====
 app.get("/api/v1/admin/trial-stats", async (c) => c.json(await trialStats(c.env.DB)));
+
+// 受け付けなかった項目と理由（原本を検証し直す。送り直しで取り込まれたものは除く）
+app.get("/api/v1/admin/rejections", async (c) => {
+  const days = Math.min(Math.max(Number(c.req.query("days") ?? "7") || 7, 1), 90);
+  return c.json(await listRejections(c.env.DB, days));
+});
 
 /** 自動チェックのルールを直した後に、保存済みの報道・判決の flags を付け直す */
 app.post("/api/v1/admin/rescan-flags", async (c) => c.json(await rescanFlags(c.env.DB)));

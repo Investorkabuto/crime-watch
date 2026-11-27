@@ -202,9 +202,9 @@ describe("取り込み", () => {
   });
 
   it("未分類の罪状を結果で知らせる", async () => {
-    const item = { ...report.items[0], external_id: "unc-1", case_ref: "case-unc-1", charges: ["官製談合防止法違反"] };
+    const item = { ...report.items[0], external_id: "unc-1", case_ref: "case-unc-1", charges: ["種苗法違反"] };
     const res = (await (await signedIngest({ items: [item] })).json()) as Json;
-    expect(res.results[0].unclassified_charges).toEqual(["官製談合防止法"]);
+    expect(res.results[0].unclassified_charges).toEqual(["種苗法"]);
   });
 
   it("受信ログと原本を D1 に保存する", async () => {
@@ -579,5 +579,21 @@ describe("閲覧 API（非公開）", () => {
     expect(stats.totals.judgments).toBeGreaterThanOrEqual(1);
     expect(stats.judgment_fill_rates.demand).toBe(1);
     expect(stats.by_law.find((r: Json) => r.code === "fraud").judgments).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("受け付けなかった項目の一覧", () => {
+  it("原本から理由を出し、送り直して取り込まれたものは除く", async () => {
+    const bad = { ...report.items[0], external_id: "rej-1", case_ref: "case-rej-1", stage: "存在しない段階" };
+    await signedIngest({ items: [bad] });
+    const list = async () =>
+      (await (await view("/api/v1/admin/rejections")).json()) as {
+        rejections: { external_id: string; errors: { path: string }[] }[];
+      };
+    const first = await list();
+    const hit = first.rejections.find((r) => r.external_id === "rej-1");
+    expect(hit?.errors.map((e) => e.path)).toContain("stage");
+    await signedIngest({ items: [{ ...bad, stage: "逮捕" }] });
+    expect((await list()).rejections.find((r) => r.external_id === "rej-1")).toBeUndefined();
   });
 });

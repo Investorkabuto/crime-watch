@@ -162,3 +162,45 @@ describe("国籍の正規化", () => {
 describe("在留資格（仮放免）", () => {
   it("仮放免は来日外国人に数える", () => expect(residenceGroup("仮放免")).toBe("来日外国人"));
 });
+
+describe("自動チェック（第3波の誤検出）", () => {
+  const sex = { isJuvenile: false, isSexCrime: true };
+  const kinds = (summary: string, opts = sex) => detectPii({ summary }, opts).map((f) => `${f.kind}:${f.match}`);
+  it.each([
+    "少女が16歳未満と知りながら性交した疑い",
+    "13歳未満の教え子以外の女児に",
+    "SNSで自分の年齢を24歳と偽って中学生の少女と",
+    "42歳の映像クリエーターを逮捕",
+    "看護師の24歳男を逮捕",
+    "大学生の男2人（いずれも19歳）を逮捕",
+    "監禁の罪に問われた無職の女（23）に対し",
+  ])("加害者の年齢・法律の要件は年齢として検出しない: %s", (s) => {
+    expect(kinds(s).filter((k) => k.startsWith("victim_age"))).toEqual([]);
+  });
+  it("被害者の年齢は引き続き検出する", () => {
+    expect(kinds("被害に遭った女性2人は当時17歳で")).toContain("victim_age:17歳");
+    expect(kinds("長女（16）に対し")).toContain("victim_age:（16）");
+    expect(kinds("16歳の少女を誘拐した男を逮捕")).toContain("victim_age:16歳");
+  });
+  it("「児童ポルノ」「高校生の女子生徒」は関係の表現として検出しない", () => {
+    expect(kinds("児童買春・児童ポルノ禁止法違反の疑い")).toEqual([]);
+    expect(kinds("交際していた高校生の女子生徒に")).toEqual([]);
+  });
+  it("「勤務先の児童」は検出する", () => {
+    expect(kinds("勤務先の児童に性的暴行")).toContain("victim_relation:勤務先の児童");
+  });
+  it("学年や一般的な言い方は学校名として検出しない", () => {
+    const juv = { isJuvenile: true, isSexCrime: false };
+    expect(kinds("座間市の高校3年の女子生徒", juv)).toEqual([]);
+    expect(kinds("県内の公立高校に勤務する教員", juv)).toEqual([]);
+    expect(kinds("元大学職員の男", juv)).toEqual([]);
+    expect(kinds("市内の長浜北高校に通う", juv)).toContain("school:市内の長浜北高校");
+  });
+  it.each(["黙秘した被告に求刑超え", "盗んだ被告に拘禁刑", "犯行は組織的で被告らの役割", "対応について被告と相談", "少年が主犯格の被告とともに", "息子さんが女性を"])(
+    "述語・助詞で終わる語は人名として検出しない: %s",
+    (s) => expect(kinds(s, { isJuvenile: false, isSexCrime: false })).toEqual([]),
+  );
+  it("人名は引き続き検出する", () => {
+    expect(kinds("山田太郎被告に判決", { isJuvenile: false, isSexCrime: false })).toContain("person_name:山田太郎被告");
+  });
+});

@@ -51,10 +51,11 @@ const AUTO_RULES: [Theme, string][] = [
   ["医療・福祉職の犯罪", `SELECT case_id FROM (${CASE_PEOPLE}) WHERE occupation IN ('医療従事者','介護・福祉職')`],
   ["著名人", `SELECT case_id FROM (${CASE_PEOPLE}) WHERE public_figure IS NOT NULL`],
   ["子どもが被害者", `SELECT case_id FROM (${CASE_VICTIMS}) WHERE age_group IN ('10歳未満','10代')
-                       UNION SELECT case_id FROM (${CASE_LAWS}) WHERE law_code = 'child_porn'`],
+                       UNION SELECT case_id FROM (${CASE_LAWS}) WHERE law_code IN ('child_porn','child_solicitation')`],
   ["高齢者が被害者", `SELECT case_id FROM (${CASE_VICTIMS}) WHERE age_group IN ('70代','80代','90代','100歳以上')`],
   ["DV・ストーカー", `SELECT case_id FROM (${CASE_LAWS}) WHERE law_code IN ('stalker','dv')`],
-  ["性犯罪", `SELECT case_id FROM (${CASE_LAWS}) WHERE law_code IN ('sexual_assault','sexual_assault_injury','non_consensual_indecency','child_porn')`],
+  ["性犯罪", `SELECT case_id FROM (${CASE_LAWS}) WHERE law_code IN ('sexual_assault','sexual_assault_injury','non_consensual_indecency','child_porn',
+                                                                   'sexual_image_recording','child_solicitation')`],
   ["飲酒運転", `SELECT case_id FROM (${CASE_LAWS}) WHERE law_code IN ('dui','dui_drunk') OR raw_text LIKE '%飲酒%'`],
   ["あおり運転", `SELECT case_id FROM (${CASE_LAWS}) WHERE law_code = 'obstructive_driving'`],
   // 75 歳以上（年齢が分からなければ 80 代以上）の被疑者・被告人が、交通の罪に問われた事件

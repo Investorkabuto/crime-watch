@@ -76,7 +76,7 @@ describe("法律の判定（試行の 5 分類）", () => {
   });
 
   it("辞書にない罪状は未分類（null）にする", () => {
-    expect(codes(["官製談合防止法違反"])[0]?.[1]).toBeNull();
+    expect(codes(["種苗法違反"])[0]?.[1]).toBeNull();
   });
 });
 
@@ -131,5 +131,29 @@ describe("第2波の罪名（0009）", () => {
   it("売春防止法", () => {
     expect(classifyCharges(["売春防止法違反（管理売春）"], aliases)[0]?.lawCode).toBe("prostitution");
     expect(classifyCharges(["売春防止法管理売春"], aliases)[0]?.lawCode).toBe("prostitution");
+  });
+});
+
+describe("第3波の罪名（0011）", () => {
+  it.each([
+    ["性的姿態等撮影", "sexual_image_recording"],
+    ["性的姿態撮影処罰法撮影", "sexual_image_recording"],
+    ["16歳未満の者に対する面会要求", "child_solicitation"],
+    ["16歳未満の者に対する映像送信要求", "child_solicitation"],
+    ["建造物損壊", "building_damage"],
+    ["関税法違反", "customs"],
+    ["犯罪収益移転防止法違反", "criminal_proceeds"],
+    ["官製談合防止法違反", "bid_rigging"],
+    ["金属盗対策法違反", "metal_theft"],
+    ["火薬類取締法違反", "explosives"],
+    ["武器等製造法違反", "arms_manufacturing"],
+    ["動物愛護法違反", "animal_welfare"],
+    ["虚偽公文書作成", "forgery"],
+    ["児童買春・ポルノ禁止法違反（提供）", "child_porn"],
+  ])("%s → %s", (raw, law) => {
+    expect(classifyCharges([raw], aliases).every((c) => c.lawCode === law)).toBe(true);
+  });
+  it("「偽造・行使」の「行使」は直前の罪状と同じ法律", () => {
+    expect(classifyCharges(["有印私文書偽造・行使"], aliases).map((c) => c.lawCode)).toEqual(["forgery", "forgery"]);
   });
 });
