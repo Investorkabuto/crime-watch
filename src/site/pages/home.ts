@@ -1,4 +1,4 @@
-// トップページ（/）— ダッシュボード風 Bento レイアウト
+// トップページ（/）— コンパクトなモダン Bento ダッシュボード
 import type { Context } from "hono";
 import { html } from "hono/html";
 import type { Env } from "../../env";
@@ -17,8 +17,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
       .prepare(
         `SELECT
            (SELECT COUNT(*) FROM reports r JOIN cases c ON c.id = r.case_id WHERE c.status = 'published' AND substr(r.reported_at, 1, 10) >= ?) AS week_reports,
-           (SELECT COUNT(*) FROM judgments j JOIN cases c ON c.id = j.case_id WHERE c.status = 'published' AND j.status = 'published' AND j.decided_on >= ?) AS week_judgments,
-           (SELECT COUNT(*) FROM cases WHERE status = 'published') AS total_cases`,
+           (SELECT COUNT(*) FROM judgments j JOIN cases c ON c.id = j.case_id WHERE c.status = 'published' AND j.status = 'published' AND j.decided_on >= ?) AS week_judgments`,
       )
       .bind(weekAgo, weekAgo),
     db
@@ -29,7 +28,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
          WHERE c.status = 'published' AND substr(c.latest_at, 1, 10) >= ?
          GROUP BY ct.theme
          ORDER BY n DESC, ct.theme ASC
-         LIMIT 8`,
+         LIMIT 6`,
       )
       .bind(weekAgo),
     db
@@ -39,7 +38,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
          FROM cases c
          WHERE c.status = 'published'
          ORDER BY c.latest_at DESC
-         LIMIT 10`,
+         LIMIT 4`,
       ),
     db
       .prepare(
@@ -52,7 +51,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
          JOIN courts co ON co.id = j.court_id
          WHERE c.status = 'published' AND j.status = 'published' AND j.decided_on = ?
          ORDER BY j.created_at DESC
-         LIMIT 6`,
+         LIMIT 4`,
       )
       .bind(today),
     db
@@ -66,7 +65,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
          JOIN courts co ON co.id = j.court_id
          WHERE c.status = 'published' AND j.status = 'published'
          ORDER BY j.decided_on DESC, j.created_at DESC
-         LIMIT 6`,
+         LIMIT 4`,
       ),
     db.prepare(
       `WITH case_laws AS (
@@ -80,24 +79,24 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
        JOIN laws l ON l.code = cl.law_code
        WHERE c.status = 'published'
        GROUP BY l.category, l.group_name
-       ORDER BY cases DESC, l.group_name ASC`,
+       ORDER BY cases DESC, l.group_name ASC
+       LIMIT 8`,
     ),
   ]);
 
-  const kpi = (kpiRes?.results?.[0] ?? { week_reports: 0, week_judgments: 0, total_cases: 0 }) as {
+  const kpi = (kpiRes?.results?.[0] ?? { week_reports: 0, week_judgments: 0 }) as {
     week_reports: number;
     week_judgments: number;
-    total_cases: number;
   };
   let topThemes = (topThemesRes?.results ?? []) as { theme: string; n: number }[];
   if (topThemes.length === 0) {
-    // 直近 7 日にデータがなければ全期間の上位 8 テーマを表示
+    // 直近 7 日にデータがなければ全期間の上位 6 テーマを表示
     const fallback = await db
       .prepare(
         `SELECT ct.theme, COUNT(DISTINCT c.id) AS n
          FROM case_themes ct JOIN cases c ON c.id = ct.case_id
          WHERE c.status = 'published'
-         GROUP BY ct.theme ORDER BY n DESC, ct.theme ASC LIMIT 8`,
+         GROUP BY ct.theme ORDER BY n DESC, ct.theme ASC LIMIT 6`,
       )
       .all<{ theme: string; n: number }>();
     topThemes = fallback.results;
@@ -141,40 +140,136 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
   const groups = (groupsRes?.results ?? []) as { category: string; group_name: string; cases: number }[];
 
   const body = html`
-    <section class="bento-kpi" aria-label="件数サマリー">
-      <div class="kpi-card">
-        <div class="kpi-label">今週の報道</div>
+    <section class="bento-kpi-2" aria-label="今週のサマリー">
+      <a class="kpi-card" href="/cases?from=${encodeURIComponent(weekAgo)}">
+        <div class="kpi-head">
+          <span class="kpi-label">今週の報道</span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
         <div class="kpi-value num">${kpi.week_reports.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">今週の判決</div>
+      </a>
+      <a class="kpi-card" href="/cases?has_judgment=1&from=${encodeURIComponent(weekAgo)}">
+        <div class="kpi-head">
+          <span class="kpi-label">今週の判決</span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
         <div class="kpi-value num">${kpi.week_judgments.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">累計事件数</div>
-        <div class="kpi-value num">${kpi.total_cases.toLocaleString("ja-JP")}<span class="kpi-unit">件</span></div>
-      </div>
+      </a>
     </section>
-    <p class="small muted" style="margin: -6px 2px 16px;">
+    <p class="small muted" style="margin: -4px 2px 14px;">
       ※ 収集した報道・判決にもとづく件数であり、全国の全発生件数ではありません。
     </p>
 
-    <section class="card">
-      <h2 class="card-title">
-        <span>件数の多いテーマ（直近 7 日）</span>
-        <a class="small" href="/themes">テーマ一覧 →</a>
-      </h2>
-      ${topThemes.length
-        ? html`<div class="pills">
-            ${topThemes.map(
-              (t) =>
-                html`<a class="pill" href="/themes/${encodeURIComponent(t.theme)}"
-                  >${t.theme}<span class="pill-count">${t.n}</span></a
-                >`,
-            )}
-          </div>`
-        : html`<p class="muted small mb-0">まだ記録されたテーマがありません。</p>`}
+    <section class="quick-grid" aria-label="メニューショートカット">
+      <a class="quick-tile" href="/prefectures">
+        <div class="quick-tile-top">
+          <span class="quick-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon>
+              <line x1="9" y1="3" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="21"></line>
+            </svg>
+          </span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
+        <div>
+          <div class="quick-title">都道府県マップ</div>
+          <div class="quick-desc">地図・一覧から地域別に探す</div>
+        </div>
+      </a>
+      <a class="quick-tile" href="/cases">
+        <div class="quick-tile-top">
+          <span class="quick-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+          </span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
+        <div>
+          <div class="quick-title">事件一覧</div>
+          <div class="quick-desc">条件・キーワードで絞り込む</div>
+        </div>
+      </a>
+      <a class="quick-tile" href="/themes">
+        <div class="quick-tile-top">
+          <span class="quick-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+              <line x1="7" y1="7" x2="7.01" y2="7"></line>
+            </svg>
+          </span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
+        <div>
+          <div class="quick-title">テーマ別</div>
+          <div class="quick-desc">詐欺・交通・判決など切り口別</div>
+        </div>
+      </a>
+      <a class="quick-tile" href="/laws">
+        <div class="quick-tile-top">
+          <span class="quick-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m12 3-7 4v5c0 5 3.5 7.5 7 9 3.5-1.5 7-4 7-9V7l-7-4z"></path>
+            </svg>
+          </span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
+        <div>
+          <div class="quick-title">法律・量刑</div>
+          <div class="quick-desc">法定刑と量刑分布を比較</div>
+        </div>
+      </a>
+      <a class="quick-tile" href="/stats">
+        <div class="quick-tile-top">
+          <span class="quick-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+          </span>
+          <span class="kpi-arrow" aria-hidden="true">→</span>
+        </div>
+        <div>
+          <div class="quick-title">統計・CSV</div>
+          <div class="quick-desc">クロス集計と属性別内訳</div>
+        </div>
+      </a>
     </section>
+
+    <div class="bento-equal" style="margin-top:0">
+      <section class="card">
+        <h2 class="card-title">
+          <span>件数の多いテーマ（直近 7 日）</span>
+          <a class="small" href="/themes">一覧 →</a>
+        </h2>
+        ${topThemes.length
+          ? html`<div class="pills">
+              ${topThemes.map(
+                (t) =>
+                  html`<a class="pill" href="/themes/${encodeURIComponent(t.theme)}"
+                    >${t.theme}<span class="pill-count">${t.n}</span></a
+                  >`,
+              )}
+            </div>`
+          : html`<p class="muted small mb-0">まだ記録されたテーマがありません。</p>`}
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">
+          <span>法律の分類（上位）</span>
+          <a class="small" href="/laws">法律一覧 →</a>
+        </h2>
+        ${groups.length
+          ? html`<div class="pills">
+              ${groups.map(
+                (g) => html`<a class="pill" href="/cases?group=${encodeURIComponent(g.group_name)}"
+                  >${g.group_name}<span class="pill-count">${g.cases}</span></a
+                >`,
+              )}
+            </div>`
+          : html`<p class="muted small mb-0">まだ分類された事件がありません。</p>`}
+      </section>
+    </div>
 
     <div class="bento-2col">
       <section class="card">
@@ -185,7 +280,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
         ${recentCases.length
           ? html`<ul class="feed">
               ${recentCases.map((k) => {
-                const themes = k.themes ? k.themes.split(",").slice(0, 3) : [];
+                const themes = k.themes ? k.themes.split(",").slice(0, 2) : [];
                 return html`<li class="feed-item">
                   <div class="feed-meta">
                     <span class="pill pill-accent">${k.latest_stage}</span>
@@ -232,30 +327,6 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>) {
           : html`<p class="muted small mb-0">まだ公開された判決がありません。</p>`}
       </section>
     </div>
-
-    <section class="card mt-16">
-      <h2 class="card-title">
-        <span>法律の分類ごとの件数</span>
-        <a class="small" href="/laws">法律一覧 →</a>
-      </h2>
-      ${groups.length
-        ? html`<div class="bento-3col">
-            ${groups.map(
-              (g) => html`<a
-                class="card"
-                style="padding:14px 16px;margin:0;display:flex;justify-content:space-between;align-items:center;text-decoration:none;color:inherit;"
-                href="/cases?group=${encodeURIComponent(g.group_name)}"
-              >
-                <div>
-                  <div class="small muted">${g.category}</div>
-                  <div style="font-weight:700">${g.group_name}</div>
-                </div>
-                <div class="num" style="font-size:20px;font-weight:800">${g.cases}<span class="small muted">件</span></div>
-              </a>`,
-            )}
-          </div>`
-        : html`<p class="muted small mb-0">まだ分類された事件がありません。</p>`}
-    </section>
   `;
 
   return c.html(

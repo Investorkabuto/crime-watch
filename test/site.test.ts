@@ -265,4 +265,45 @@ describe("公開サイト（S1 + S2）", () => {
     expect(ogRes.status).toBe(200);
     expect(ogRes.headers.get("Content-Type")).toContain("image/svg+xml");
   });
+
+  it("テーマ重複修正・Muse削除・TOP累計削除・日本地図・統一スライドダウン検索窓が反映されている", async () => {
+    // 同じ事件・同じテーマに auto と muse の両方が存在する状態を作る（強盗は自動付与される）
+    await env.DB.prepare("INSERT OR IGNORE INTO case_themes (case_id, theme, source) VALUES (?, '強盗', 'muse')")
+      .bind(caseId)
+      .run();
+
+    const themeHtml = await (await view(`/themes/${encodeURIComponent("強盗")}`)).text();
+    const matches = themeHtml.match(/強盗致傷事件で被告に拘禁刑9年の判決/g) ?? [];
+    expect(matches.length).toBe(1);
+
+    const themeRss = await (await view(`/themes/${encodeURIComponent("強盗")}/feed.xml`)).text();
+    const rssMatches = themeRss.match(/強盗致傷事件で被告に拘禁刑9年の判決/g) ?? [];
+    expect(rssMatches.length).toBe(1);
+
+    // 公開サイトに Muse の記名がないこと
+    const themesListHtml = await (await view("/themes")).text();
+    const aboutHtml = await (await view("/about")).text();
+    expect(themesListHtml).not.toMatch(/muse/i);
+    expect(aboutHtml).not.toMatch(/muse/i);
+
+    // TOP に累計事件数がなく、ダッシュボードリンクと統一検索ドロワーがあること
+    const homeHtml = await (await view("/")).text();
+    expect(homeHtml).not.toContain("累計事件数");
+    expect(homeHtml).toContain("都道府県マップ");
+    expect(homeHtml).toContain('id="cw-search-drawer"');
+
+    // 都道府県ページにリアル日本地図 SVG と地域ズーム・テーブル併用があること
+    const prefsHtml = await (await view("/prefectures")).text();
+    expect(prefsHtml).toContain('id="cw-japan-svg"');
+    expect(prefsHtml).toContain("九州・沖縄");
+    expect(prefsHtml).toContain('id="cw-pref-tbody"');
+
+    // 事件一覧・統計で統一検索ドロワーが採用されていること
+    const casesHtml = await (await view("/cases")).text();
+    expect(casesHtml).toContain('id="cw-search-drawer"');
+    expect(casesHtml).toContain("検索・詳細絞り込み");
+    const statsHtml = await (await view("/stats")).text();
+    expect(statsHtml).toContain('id="cw-search-drawer"');
+    expect(statsHtml).toContain("集計条件を絞り込む");
+  });
 });
