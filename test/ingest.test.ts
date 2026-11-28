@@ -2,7 +2,8 @@ import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import report from "../schema/examples/report.json";
 import judgment from "../schema/examples/judgment.json";
-import { signedIngest, view } from "./helpers";
+import { adminPost, adminView, signedIngest, view } from "./helpers";
+import worker from "../src/index";
 
 type Json = Record<string, any>;
 
@@ -224,10 +225,7 @@ describe("自動チェックの付け直し", () => {
     await env.DB.prepare("UPDATE judgments SET flags = ? WHERE external_id = 'rs-1'")
       .bind(JSON.stringify([{ kind: "person_name", field: "summary", match: "会社役員の被告" }]))
       .run();
-    const res = await SELF.fetch("https://cw.test/api/v1/admin/rescan-flags", {
-      method: "POST",
-      headers: { Authorization: "Bearer test-viewer-token" },
-    });
+    const res = await adminPost("/api/v1/admin/rescan-flags");
     const body = (await res.json()) as Json;
     expect(body.changed).toBeGreaterThanOrEqual(1);
     const row = await env.DB.prepare("SELECT flags FROM judgments WHERE external_id = 'rs-1'").first<Json>();
@@ -311,21 +309,46 @@ describe("事件の状況・被害者・職業", () => {
 });
 
 describe("管理 API と管理画面", () => {
-  const post = (path: string, body: unknown) =>
-    SELF.fetch(`https://cw.test${path}`, {
-      method: "POST",
-      headers: { Authorization: "Bearer test-viewer-token", "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+  const post = (path: string, body: unknown) => adminPost(path, body);
 
-  it("事件を非公開にすると一覧から消え、status=all では見える", async () => {
+  it("閲覧用トークンでは管理 API を呼べず、SITE_PUBLIC=true でも ADMIN_TOKEN が必須", async () => {
+    expect((await view("/api/v1/admin/trial-stats")).status).toBe(401);
+    expect((await SELF.fetch("https://cw.test/api/v1/admin/trial-stats")).status).toBe(401);
+
+    const publicEnv = { ...env, SITE_PUBLIC: "true" };
+    const noAuth = await worker.fetch(new Request("https://cw.test/api/v1/admin/trial-stats"), publicEnv);
+    expect(noAuth.status).toBe(401);
+    const withViewer = await worker.fetch(
+      new Request("https://cw.test/api/v1/admin/trial-stats", { headers: { Authorization: "Bearer test-viewer-token" } }),
+      publicEnv,
+    );
+    expect(withViewer.status).toBe(401);
+    const withAdmin = await worker.fetch(
+      new Request("https://cw.test/api/v1/admin/trial-stats", { headers: { Authorization: "Bearer test-admin-token" } }),
+      publicEnv,
+    );
+    expect(withAdmin.status).toBe(200);
+  });
+
+  it("事件を非公開にすると公開 API からは見えず、管理 API の status=all や詳細でのみ見える", async () => {
     const r = { ...report.items[0], external_id: "adm-1", case_ref: "case-adm-1" };
     await signedIngest({ items: [r] });
     expect((await post("/api/v1/admin/cases/case-adm-1/status", { status: "hidden" })).status).toBe(200);
+
+    // 公開 API では status=all / status=hidden を付けても、詳細を直接叩いても非公開事件は出ない
     const pub = (await (await view("/api/v1/cases?limit=200")).json()) as Json;
     expect(pub.cases.some((c: Json) => c.case_ref === "case-adm-1")).toBe(false);
-    const all = (await (await view("/api/v1/cases?limit=200&status=all")).json()) as Json;
+    const pubAll = (await (await view("/api/v1/cases?limit=200&status=all")).json()) as Json;
+    expect(pubAll.cases.some((c: Json) => c.case_ref === "case-adm-1")).toBe(false);
+    const pubHidden = (await (await view("/api/v1/cases?limit=200&status=hidden")).json()) as Json;
+    expect(pubHidden.cases.some((c: Json) => c.case_ref === "case-adm-1")).toBe(false);
+    expect((await view("/api/v1/cases/case-adm-1")).status).toBe(404);
+
+    // 管理 API では status=all / 詳細ともに見える
+    const all = (await (await adminView("/api/v1/admin/cases?limit=200&status=all")).json()) as Json;
     expect(all.cases.find((c: Json) => c.case_ref === "case-adm-1").status).toBe("hidden");
+    expect((await adminView("/api/v1/admin/cases/case-adm-1")).status).toBe(200);
+
     await post("/api/v1/admin/cases/case-adm-1/status", { status: "published" });
   });
 
@@ -352,7 +375,7 @@ describe("管理 API と管理画面", () => {
   it("要確認の一覧を返す", async () => {
     const r = { ...report.items[0], external_id: "adm-f", case_ref: "case-adm-f", summary: "山田太郎容疑者を逮捕" };
     await signedIngest({ items: [r] });
-    const f = (await (await view("/api/v1/admin/flagged")).json()) as Json;
+    const f = (await (await adminView("/api/v1/admin/flagged")).json()) as Json;
     expect(f.items.find((x: Json) => x.external_id === "adm-f").flags[0].kind).toBe("person_name");
   });
 
@@ -360,6 +383,8 @@ describe("管理 API と管理画面", () => {
     const res = await SELF.fetch("https://cw.test/admin");
     expect(res.status).toBe(200);
     expect(res.headers.get("x-robots-tag")).toContain("noindex");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     const html = await res.text();
     expect(html).toContain("HANZAI Watch 管理");
     expect(html).not.toContain("muse-r-");
@@ -367,14 +392,9 @@ describe("管理 API と管理画面", () => {
 });
 
 describe("要確認の確認済み", () => {
-  const post = (path: string, body: unknown) =>
-    SELF.fetch(`https://cw.test${path}`, {
-      method: "POST",
-      headers: { Authorization: "Bearer test-viewer-token", "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  const pending = async () => ((await (await view("/api/v1/admin/flagged")).json()) as Json).items as Json[];
-  const reviewed = async () => ((await (await view("/api/v1/admin/flagged?reviewed=true")).json()) as Json).items as Json[];
+  const post = (path: string, body: unknown) => adminPost(path, body);
+  const pending = async () => ((await (await adminView("/api/v1/admin/flagged")).json()) as Json).items as Json[];
+  const reviewed = async () => ((await (await adminView("/api/v1/admin/flagged?reviewed=true")).json()) as Json).items as Json[];
   const caseFlag = async () => (await env.DB.prepare("SELECT flagged FROM cases WHERE case_ref = 'case-rv'").first<Json>())?.flagged;
 
   it("確認済みにすると一覧と事件の印から外れ、自動チェックをやり直しても残り、内容が変わると戻る", async () => {
@@ -503,7 +523,7 @@ describe("テーマ", () => {
 
   it("全事件のテーマを付け直せる", async () => {
     await env.DB.exec("DELETE FROM case_themes");
-    const res = await SELF.fetch("https://cw.test/api/v1/admin/recompute-themes", { method: "POST", headers: { Authorization: "Bearer test-viewer-token" } });
+    const res = await adminPost("/api/v1/admin/recompute-themes");
     expect(((await res.json()) as Json).themes).toBeGreaterThan(0);
     expect(await themesOf("case-th")).toContain("闇バイト・トクリュウ:muse");
   });
@@ -531,7 +551,7 @@ describe("国籍", () => {
     expect(jd).toMatchObject({ defendant_nationality: "ベトナム", defendant_residence_status: "技能実習", nationality_inherited: 1 });
     expect(d.judgments.find((x: Json) => x.external_id === "nat-j2").defendant_nationality).toBeNull();
 
-    const st = (await (await view("/api/v1/admin/nationality-stats?from=2026-07-07&to=2026-07-07")).json()) as Json;
+    const st = (await (await adminView("/api/v1/admin/nationality-stats?from=2026-07-07&to=2026-07-07")).json()) as Json;
     expect(st.total_people).toBe(2);
     expect(st.stated_people).toBe(1);
     expect(st.foreign_people).toBe(1);
@@ -550,7 +570,7 @@ describe("都道府県別の集計", () => {
     const r = { ...report.items[0], external_id: "pf-r", case_ref: "case-pf", prefecture: "奈良県", city: "奈良市", police_agency: "大阪府警", occurred_on: "2026-02-01" };
     const j = { ...judgment.items[0], external_id: "pf-j", case_ref: "case-pf", court: "大阪地裁", prefecture: "奈良県" };
     await signedIngest({ items: [r, j] });
-    const get = async (qs: string) => (await (await view("/api/v1/admin/prefecture-stats?" + qs)).json()) as Json;
+    const get = async (qs: string) => (await (await adminView("/api/v1/admin/prefecture-stats?" + qs)).json()) as Json;
     const pick = (d: Json, pref: string) => d.prefectures.find((p: Json) => p.prefecture === pref);
 
     const occ = await get("basis=occurrence&from=2026-02-01&to=2026-02-01");
@@ -571,6 +591,12 @@ describe("都道府県別の集計", () => {
     const none = await get("basis=court&from=2026-02-01&to=2026-02-01&law=murder");
     expect(none.total_cases).toBe(0);
 
+    // 想定外の basis（prototype プロパティ名など）でも 500 にならず既定の発生地にフォールバックする
+    const protoRes = await adminView("/api/v1/admin/prefecture-stats?basis=toString");
+    expect(protoRes.status).toBe(200);
+    const protoCasesRes = await view("/api/v1/cases?prefecture=" + encodeURIComponent("奈良県") + "&pref_basis=constructor");
+    expect(protoCasesRes.status).toBe(200);
+
     // 事件一覧も同じ基準で絞り込める
     const list = (await (await view("/api/v1/cases?prefecture=" + encodeURIComponent("大阪府") + "&pref_basis=police&limit=200")).json()) as Json;
     expect(list.cases.some((c: Json) => c.case_ref === "case-pf")).toBe(true);
@@ -582,10 +608,14 @@ describe("閲覧 API（非公開）", () => {
     const res = await SELF.fetch("https://cw.test/api/v1/cases");
     expect(res.status).toBe(401);
   });
+  it("ADMIN_TOKEN でも非公開期間中の閲覧 API を呼べる", async () => {
+    const res = await adminView("/api/v1/cases");
+    expect(res.status).toBe(200);
+  });
   it("試行の集計を返す", async () => {
     await signedIngest(report);
     await signedIngest(judgment);
-    const stats = (await (await view("/api/v1/admin/trial-stats")).json()) as Json;
+    const stats = (await (await adminView("/api/v1/admin/trial-stats")).json()) as Json;
     expect(stats.totals.judgments).toBeGreaterThanOrEqual(1);
     expect(stats.judgment_fill_rates.demand).toBe(1);
     expect(stats.by_law.find((r: Json) => r.code === "fraud").judgments).toBeGreaterThanOrEqual(1);
@@ -597,7 +627,7 @@ describe("受け付けなかった項目の一覧", () => {
     const bad = { ...report.items[0], external_id: "rej-1", case_ref: "case-rej-1", stage: "存在しない段階" };
     await signedIngest({ items: [bad] });
     const list = async () =>
-      (await (await view("/api/v1/admin/rejections")).json()) as {
+      (await (await adminView("/api/v1/admin/rejections")).json()) as {
         rejections: { external_id: string; errors: { path: string }[] }[];
       };
     const first = await list();
@@ -617,7 +647,7 @@ describe("罪状の判定し直し", () => {
     await env.DB.prepare("UPDATE report_charges SET charge_text = '行使', law_code = NULL, matched_alias = NULL WHERE report_id = ? AND seq = 2")
       .bind(r!.id)
       .run();
-    const res = await SELF.fetch("https://cw.test/api/v1/admin/reclassify", { method: "POST", headers: { Authorization: "Bearer test-viewer-token" } });
+    const res = await adminPost("/api/v1/admin/reclassify");
     expect(res.status).toBe(200);
     const { results } = await env.DB.prepare("SELECT seq, charge_text, law_code FROM report_charges WHERE report_id = ? ORDER BY seq")
       .bind(r!.id)

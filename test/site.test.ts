@@ -1,7 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { LAW_TEXTS } from "../src/site/law-texts";
-import { signedIngest, view } from "./helpers";
+import { adminPost, signedIngest, view } from "./helpers";
 
 describe("公開サイト（S1 + S2）", () => {
   let caseId = "";
@@ -103,11 +103,7 @@ describe("公開サイト（S1 + S2）", () => {
     hiddenCaseId = c2!.id;
 
     // 2件目を非公開に設定
-    const hideRes = await SELF.fetch(`https://cw.test/api/v1/admin/cases/${hiddenCaseId}/status`, {
-      method: "POST",
-      headers: { Authorization: "Bearer test-viewer-token", "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "hidden" }),
-    });
+    const hideRes = await adminPost(`/api/v1/admin/cases/${hiddenCaseId}/status`, { status: "hidden" });
     expect(hideRes.status).toBe(200);
   });
 
@@ -252,10 +248,7 @@ describe("公開サイト（S1 + S2）", () => {
   });
 
   it("RSS・sitemap・OGP SVG・集計テーブル再計算が正常に動く", async () => {
-    const aggRes = await SELF.fetch("https://cw.test/api/v1/admin/recompute-aggregates", {
-      method: "POST",
-      headers: { Authorization: "Bearer test-viewer-token" },
-    });
+    const aggRes = await adminPost("/api/v1/admin/recompute-aggregates");
     expect(aggRes.status).toBe(200);
     const aggJson = (await aggRes.json()) as { theme_rows: number; law_rows: number; dist_rows: number };
     expect(aggJson.theme_rows).toBeGreaterThan(0);
@@ -428,5 +421,66 @@ describe("公開サイト（S1 + S2）", () => {
     const casesHtml = await (await view("/cases")).text();
     expect(casesHtml).toContain('id="cw-search-drawer"');
     expect(casesHtml).not.toContain('class="filter-bar-btn"');
+  });
+
+  it("不正な % エンコードや想定外パラメータで 500 にならず安全に応答する", async () => {
+    expect((await view("/themes/%ZZ")).status).toBe(404);
+    expect((await view("/prefectures/%ZZ")).status).toBe(404);
+    expect((await view("/themes/%ZZ/feed.xml")).status).toBe(404);
+    expect((await view("/og/theme/%ZZ.svg")).status).toBe(200);
+    expect((await view(`/cases?prefecture=${encodeURIComponent("東京都")}&pref_basis=constructor`)).status).toBe(200);
+
+    // 不正な Cookie 値でも 500 にならない
+    const badCookie = await SELF.fetch("https://cw.test/", {
+      headers: { Accept: "text/html", Cookie: "cw_viewer=%ZZ" },
+    });
+    expect(badCookie.status).toBe(401);
+
+    // 問い合わせフォームの target_url に不正な % が含まれても 500 にならない
+    const contactRes = await SELF.fetch("https://cw.test/contact", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-viewer-token",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        kind: "correction",
+        target_url: "https://cw.test/cases/%ZZ",
+        body: "不正なエンコードを含む URL のテスト送信です。",
+      }).toString(),
+    });
+    expect(contactRes.status).toBe(200);
+  });
+
+  it("セキュリティヘッダー、ヘッダーナビゲーション、有効なフォント指定、ADMIN_TOKEN ログインが機能する", async () => {
+    // ADMIN_TOKEN でも非公開プレビューにログインできる
+    const adminLogin = await SELF.fetch("https://cw.test/_auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "token=test-admin-token&next=%2Flaws",
+      redirect: "manual",
+    });
+    expect(adminLogin.status).toBe(303);
+    const cookie = (adminLogin.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+
+    const lawsRes = await SELF.fetch("https://cw.test/laws", { headers: { Cookie: cookie } });
+    expect(lawsRes.status).toBe(200);
+
+    // セキュリティヘッダー
+    expect(lawsRes.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(lawsRes.headers.get("x-frame-options")).toBe("DENY");
+    expect(lawsRes.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
+    expect(lawsRes.headers.get("strict-transport-security")).toContain("max-age=");
+    expect(lawsRes.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+
+    const lawsHtml = await lawsRes.text();
+    // ヘッダーナビゲーションが表示され、現在ページが active
+    expect(lawsHtml).toContain('<nav class="nav"');
+    expect(lawsHtml).toContain('<a href="/cases">事件一覧</a>');
+    expect(lawsHtml).toContain('<a href="/laws" class="active" aria-current="page">法律</a>');
+    expect(lawsHtml).toContain('<a href="/stats">統計</a>');
+
+    // 無効な CSS ショートハンド `font: <size>/<lh> inherit` が含まれないこと
+    expect(lawsHtml).not.toMatch(/font:\s*[^;]+inherit\s*;/);
   });
 });

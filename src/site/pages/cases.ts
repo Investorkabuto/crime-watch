@@ -3,7 +3,7 @@ import type { Context } from "hono";
 import { html } from "hono/html";
 import type { Env } from "../../env";
 import { periodAt, type PenaltyPeriod } from "../../metrics";
-import { PREF_EXPR, type PrefBasis } from "../../prefstats";
+import { PREF_EXPR, resolvePrefBasis } from "../../prefstats";
 import { PREFECTURES } from "../../schema";
 import { THEMES } from "../../themes";
 import {
@@ -80,7 +80,7 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
     binds.push(q.theme);
   }
   if (q.prefecture) {
-    const basis: PrefBasis = q.pref_basis && q.pref_basis in PREF_EXPR ? (q.pref_basis as PrefBasis) : "occurrence";
+    const basis = resolvePrefBasis(q.pref_basis);
     if (q.prefecture === "不明") where.push(`${PREF_EXPR[basis]} IS NULL`);
     else {
       where.push(`${PREF_EXPR[basis]} = ?`);
@@ -184,8 +184,7 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
 
   const whereSql = where.join(" AND ");
   const recentThreshold = daysAgoJst(3);
-  const [countRes, rowsRes, lawsRes] = await db.batch([
-    db.prepare(`SELECT COUNT(*) AS n FROM cases c WHERE ${whereSql}`).bind(...binds),
+  const [rowsRes, lawsRes] = await db.batch([
     db
       .prepare(
         `SELECT c.id, c.title, c.summary, c.prefecture, c.city, c.occurred_on, c.latest_stage, c.progress, c.latest_at,
@@ -198,13 +197,11 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
          ORDER BY ${orderBy}
          LIMIT ? OFFSET ?`,
       )
-      .bind(...binds, PAGE_SIZE, offset),
+      .bind(...binds, PAGE_SIZE + 1, offset),
     db.prepare("SELECT code, name, group_name FROM laws ORDER BY sort_order"),
   ]);
 
-  const total = Number((countRes?.results?.[0] as { n?: number } | undefined)?.n ?? 0);
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const cases = (rowsRes?.results ?? []) as {
+  const allRows = (rowsRes?.results ?? []) as {
     id: string;
     title: string;
     summary: string;
@@ -218,6 +215,8 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
     themes: string | null;
     entry_count: number;
   }[];
+  const hasNext = allRows.length > PAGE_SIZE;
+  const cases = allRows.slice(0, PAGE_SIZE);
   const laws = (lawsRes?.results ?? []) as { code: string; name: string; group_name: string }[];
   const groups = [...new Set(laws.map((l) => l.group_name))];
 
@@ -361,7 +360,7 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
 
   const body = html`
     <h1 class="page-h1">事件一覧</h1>
-    <p class="page-lead">該当 <strong class="num">${total.toLocaleString("ja-JP")}</strong> 件（右上の検索ボタンから条件を絞り込めます）。</p>
+    <p class="page-lead">${page > 1 ? `第 ${page} ページ（${cases.length} 件表示）` : hasNext ? `${cases.length} 件以上表示` : `該当 ${cases.length} 件`}（右上の検索ボタンから条件を絞り込めます）。</p>
 
     ${activeChips.length > 0
       ? html`<section class="card filter-bar" style="margin-bottom:16px">
@@ -403,11 +402,11 @@ export async function renderCasesListPage(c: Context<{ Bindings: Env }>) {
           </ul>`
         : html`<p class="muted mb-0">条件に一致する事件はありません。</p>`}
 
-      ${totalPages > 1
+      ${page > 1 || hasNext
         ? html`<nav class="pager" aria-label="ページ送り">
             <div>${page > 1 ? html`<a class="btn" href="${pageUrl(page - 1)}">← 前のページ</a>` : ""}</div>
-            <div class="small muted num">${page} / ${totalPages} ページ</div>
-            <div>${page < totalPages ? html`<a class="btn" href="${pageUrl(page + 1)}">次のページ →</a>` : ""}</div>
+            <div class="small muted num">${page} ページ目</div>
+            <div>${hasNext ? html`<a class="btn" href="${pageUrl(page + 1)}">次のページ →</a>` : ""}</div>
           </nav>`
         : ""}
     </section>

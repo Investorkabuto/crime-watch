@@ -20,3 +20,18 @@ export async function signedIngest(payload: unknown, opts: { token?: string; sec
 export function view(path: string) {
   return SELF.fetch(`https://cw.test${path}`, { headers: { Authorization: "Bearer test-viewer-token" } });
 }
+
+export function adminView(path: string) {
+  return SELF.fetch(`https://cw.test${path}`, { headers: { Authorization: "Bearer test-admin-token" } });
+}
+
+export function adminPost(path: string, body?: unknown) {
+  return SELF.fetch(`https://cw.test${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer test-admin-token",
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+}
