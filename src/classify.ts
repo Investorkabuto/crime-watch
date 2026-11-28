@@ -63,6 +63,8 @@ export function splitCharges(raw: string): string[] {
 }
 
 function extractModifier(text: string): { text: string; modifier: string | null } {
+  // 「自殺ほう助」「自殺教唆」はそれ自体が罪名（刑法202条）で、ほかの罪のほう助・教唆ではない
+  if (/自殺(ほう助|幇助|教唆)/.test(text)) return { text, modifier: null };
   let modifier: string | null = null;
   let t = text;
   for (const [re, mod] of MODIFIERS) {
