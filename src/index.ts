@@ -9,7 +9,7 @@ import { checkDatabase } from "./dbcheck";
 import { rescanFlags } from "./rescan";
 import { addAlias, listFlagged, reclassifyAll, reviewFlag, setCaseStatus } from "./admin";
 import { ADMIN_PAGE } from "./admin-page";
-import { PREF_EXPR, prefectureStats, type PrefBasis } from "./prefstats";
+import { PREF_EXPR, prefectureStats, resolvePrefBasis, type PrefBasis } from "./prefstats";
 import { nationalityStats } from "./natstats";
 import { recomputeThemes } from "./themes";
 import { listRejections } from "./rejections";
@@ -20,6 +20,34 @@ import { siteApp } from "./site/router";
 const MAX_BODY_BYTES = 1024 * 1024;
 
 const app = new Hono<{ Bindings: Env }>();
+
+const SITE_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self' https://challenges.cloudflare.com",
+  "frame-src https://challenges.cloudflare.com",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+].join("; ");
+
+app.use("*", async (c, next) => {
+  await next();
+  c.header("X-Content-Type-Options", "nosniff");
+  if (!c.res.headers.has("X-Frame-Options")) c.header("X-Frame-Options", "DENY");
+  if (!c.res.headers.has("Referrer-Policy")) c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+  if (new URL(c.req.url).protocol === "https:") {
+    c.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  const ct = c.res.headers.get("Content-Type") ?? "";
+  if (ct.includes("text/html") && !c.res.headers.has("Content-Security-Policy")) {
+    c.header("Content-Security-Policy", SITE_CSP);
+  }
+});
 
 /** 死活確認。データベースのテーブルと初期データがそろっているかも返す */
 /** 管理画面。ページ自体にはデータを含まず、閲覧 API をトークン付きで呼ぶ */
@@ -105,17 +133,24 @@ app.post("/api/v1/ingest", async (c) => {
   return c.json({ ingest_id: logId, ...summary, results });
 });
 
-// ===== 閲覧 API（非公開期間中は VIEWER_TOKEN が必要）=====
+// ===== 認証ガード =====
+// 閲覧 API（非公開期間中は VIEWER_TOKEN または ADMIN_TOKEN が必要）
 const viewerGuard: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
   if (c.env.SITE_PUBLIC === "true") return next();
-  if (!checkBearer(c.req.header("Authorization"), c.env.VIEWER_TOKEN)) return c.json({ error: "unauthorized" }, 401);
+  const auth = c.req.header("Authorization");
+  if (checkBearer(auth, c.env.VIEWER_TOKEN) || checkBearer(auth, c.env.ADMIN_TOKEN)) return next();
+  return c.json({ error: "unauthorized" }, 401);
+};
+// 管理 API（公開状態に関係なく常に ADMIN_TOKEN が必須）
+const adminGuard: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
+  if (!checkBearer(c.req.header("Authorization"), c.env.ADMIN_TOKEN)) return c.json({ error: "unauthorized" }, 401);
   return next();
 };
 app.use("/api/v1/laws", viewerGuard);
 app.use("/api/v1/cases", viewerGuard);
 app.use("/api/v1/cases/*", viewerGuard);
 app.use("/api/v1/judgments", viewerGuard);
-app.use("/api/v1/admin/*", viewerGuard);
+app.use("/api/v1/admin/*", adminGuard);
 
 app.get("/api/v1/laws", async (c) => {
   const { results } = await c.env.DB.prepare(
@@ -126,13 +161,11 @@ app.get("/api/v1/laws", async (c) => {
   return c.json({ laws: results.map((r) => ({ ...r, penalties: JSON.parse((r as { penalties: string }).penalties) })) });
 });
 
-app.get("/api/v1/cases", async (c) => {
-  const q = c.req.query();
+async function queryCasesList(db: D1Database, q: Record<string, string>, allowHidden: boolean) {
   const where: string[] = [];
   const binds: unknown[] = [];
-  // 管理画面用: status=all で非公開も含める、status=hidden で非公開のみ
-  if (q.status === "hidden") where.push("c.status = 'hidden'");
-  else if (q.status !== "all") where.push("c.status = 'published'");
+  if (allowHidden && q.status === "hidden") where.push("c.status = 'hidden'");
+  else if (!allowHidden || q.status !== "all") where.push("c.status = 'published'");
   if (q.flagged === "1") where.push("c.flagged = 1");
   if (q.progress) {
     where.push("c.progress = ?");
@@ -155,7 +188,7 @@ app.get("/api/v1/cases", async (c) => {
   }
   if (q.prefecture) {
     // pref_basis=police|court で、都道府県別の集計と同じ基準で絞り込む（既定は発生地）
-    const basis = (q.pref_basis && q.pref_basis in PREF_EXPR ? q.pref_basis : "occurrence") as PrefBasis;
+    const basis = resolvePrefBasis(q.pref_basis);
     if (q.prefecture === "不明") where.push(`${PREF_EXPR[basis]} IS NULL`);
     else {
       where.push(`${PREF_EXPR[basis]} = ?`);
@@ -173,7 +206,7 @@ app.get("/api/v1/cases", async (c) => {
   if (q.include_backfill !== "true" && q.new_only === "true") where.push("c.backfill = 0");
   const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
   const offset = Math.max(Number(q.offset) || 0, 0);
-  const { results } = await c.env.DB.prepare(
+  const { results } = await db.prepare(
     `SELECT c.id, c.case_ref, c.title, c.summary, c.occurred_on, c.prefecture,
             c.city, c.is_juvenile, c.latest_stage, c.progress, c.latest_at, c.backfill, c.flagged
             , c.status, (SELECT group_concat(DISTINCT ct.theme) FROM case_themes ct WHERE ct.case_id = c.id) AS themes
@@ -181,24 +214,24 @@ app.get("/api/v1/cases", async (c) => {
   )
     .bind(...binds, limit, offset)
     .all();
-  return c.json({
+  return {
     cases: results.map((r) => ({ ...r, themes: r.themes ? String(r.themes).split(",") : [] })),
     limit,
     offset,
-  });
-});
+  };
+}
 
-app.get("/api/v1/cases/:id", async (c) => {
-  const id = c.req.param("id");
-  const db = c.env.DB;
+async function queryCaseDetail(db: D1Database, id: string, includeHidden: boolean) {
+  const statusClause = includeHidden ? "" : " AND status = 'published'";
   const kase = await db
     .prepare(
       `SELECT id, case_ref, title, summary, occurred_on, prefecture, city,
-              is_juvenile, latest_stage, progress, latest_at, backfill, flagged, status FROM cases WHERE id = ? OR case_ref = ?`,
+              is_juvenile, latest_stage, progress, latest_at, backfill, flagged, status
+       FROM cases WHERE (id = ? OR case_ref = ?)${statusClause}`,
     )
     .bind(id, id)
     .first<{ id: string; is_juvenile: number }>();
-  if (!kase) return c.json({ error: "not_found" }, 404);
+  if (!kase) return null;
   const { results: themeRows } = await db
     .prepare("SELECT theme, source FROM case_themes WHERE case_id = ? ORDER BY theme")
     .bind(kase.id)
@@ -241,14 +274,14 @@ app.get("/api/v1/cases/:id", async (c) => {
     ).bind(kase.id),
   ]);
   const vs = (victims?.results ?? []) as Record<string, unknown>[];
-  const victimsOf = (type: string, id: unknown) =>
-    vs.filter((v) => v.parent_type === type && v.parent_id === id).map(({ parent_type: _t, parent_id: _p, ...v }) => v);
-  const by = <T extends Record<string, unknown>>(rows: T[], key: string, id: unknown) => rows.filter((r) => r[key] === id);
+  const victimsOf = (type: string, parentId: unknown) =>
+    vs.filter((v) => v.parent_type === type && v.parent_id === parentId).map(({ parent_type: _t, parent_id: _p, ...v }) => v);
+  const by = <T extends Record<string, unknown>>(rows: T[], key: string, targetId: unknown) => rows.filter((r) => r[key] === targetId);
   const rc = (rcharges?.results ?? []) as Record<string, unknown>[];
   const ps = (persons?.results ?? []) as Record<string, unknown>[];
   const jc = (jcharges?.results ?? []) as Record<string, unknown>[];
   const jg = (judges?.results ?? []) as Record<string, unknown>[];
-  return c.json({
+  return {
     case: { ...kase, themes: themeRows },
     reports: ((reports?.results ?? []) as Record<string, unknown>[]).map((r) => ({
       ...r,
@@ -265,7 +298,15 @@ app.get("/api/v1/cases/:id", async (c) => {
         victims: victimsOf("judgment", j.id),
       };
     }),
-  });
+  };
+}
+
+app.get("/api/v1/cases", async (c) => c.json(await queryCasesList(c.env.DB, c.req.query(), false)));
+
+app.get("/api/v1/cases/:id", async (c) => {
+  const detail = await queryCaseDetail(c.env.DB, c.req.param("id"), false);
+  if (!detail) return c.json({ error: "not_found" }, 404);
+  return c.json(detail);
 });
 
 app.get("/api/v1/judgments", async (c) => {
@@ -299,6 +340,14 @@ app.get("/api/v1/judgments", async (c) => {
 });
 
 // ===== 管理・試行用 =====
+app.get("/api/v1/admin/cases", async (c) => c.json(await queryCasesList(c.env.DB, c.req.query(), true)));
+
+app.get("/api/v1/admin/cases/:id", async (c) => {
+  const detail = await queryCaseDetail(c.env.DB, c.req.param("id"), true);
+  if (!detail) return c.json({ error: "not_found" }, 404);
+  return c.json(detail);
+});
+
 app.get("/api/v1/admin/trial-stats", async (c) => c.json(await trialStats(c.env.DB)));
 
 // 受け付けなかった項目と理由（原本を検証し直す。送り直しで取り込まれたものは除く）
@@ -363,7 +412,7 @@ app.post("/api/v1/admin/aliases", async (c) => {
 });
 
 /** 公開サイト用の集計テーブルを再計算する（Cron と同じ処理） */
-app.post("/api/v1/admin/recompute-aggregates", async (c) => c.json(await recomputeAggregates(c.env.DB)));
+app.post("/api/v1/admin/recompute-aggregates", async (c) => c.json(await recomputeAggregates(c.env.DB, { force: true })));
 
 // ===== 公開サイト（SSR + SVG + RSS + sitemap）=====
 app.route("/", siteApp);

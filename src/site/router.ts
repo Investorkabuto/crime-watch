@@ -2,6 +2,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import type { Env } from "../env";
 import { handleCaseFeed, handleMainFeed, handleRobots, handleSitemap, handleThemeFeed } from "../feeds";
+import { safeDecodeURIComponent } from "../normalize";
 import { THEMES } from "../themes";
 import { handleViewerLogin, siteViewerGuard } from "./auth";
 import { renderCaseDetailPage, renderCasesListPage } from "./pages/cases";
@@ -21,8 +22,29 @@ siteApp.get("/robots.txt", handleRobots);
 // 非公開期間中のブラウザ閲覧ログイン
 siteApp.post("/_auth/login", handleViewerLogin);
 
-// 公開時のキャッシュヘッダー制御（非公開時は no-store + noindex）
+// 公開時のキャッシュヘッダー・Cache API 制御（非公開時は no-store + noindex）
 const cacheHeaders: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
+  if (c.req.method === "GET" && c.env.SITE_PUBLIC === "true") {
+    const cache = (caches as unknown as { default?: Cache }).default;
+    if (cache) {
+      const cacheKey = new Request(c.req.url, { method: "GET" });
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+      await next();
+      if (c.res.status === 200) {
+        if (!c.res.headers.has("Cache-Control")) {
+          c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=3600");
+        }
+        const toCache = c.res.clone();
+        try {
+          c.executionCtx.waitUntil(cache.put(cacheKey, toCache));
+        } catch {
+          await cache.put(cacheKey, toCache);
+        }
+      }
+      return;
+    }
+  }
   await next();
   if (c.req.method !== "GET") {
     c.header("Cache-Control", "no-store");
@@ -34,7 +56,7 @@ const cacheHeaders: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
     return;
   }
   if (!c.res.headers.has("Cache-Control") && c.res.status === 200) {
-    c.header("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600");
+    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=3600");
   }
 };
 
@@ -57,7 +79,8 @@ siteApp.get("/og/default.svg", () => {
 });
 
 siteApp.get("/og/theme/:theme", (c) => {
-  const rawName = decodeURIComponent(c.req.param("theme")).replace(/\.svg$/, "");
+  const decoded = safeDecodeURIComponent(c.req.param("theme"));
+  const rawName = decoded ? decoded.replace(/\.svg$/, "") : "";
   const title = (THEMES as readonly string[]).includes(rawName) ? rawName : "テーマ別事件データ";
   return new Response(renderOgSvg(title, "テーマ別の報道・判決アーカイブ"), {
     headers: { "Content-Type": "image/svg+xml; charset=utf-8" },

@@ -2,6 +2,7 @@
 import type { Context } from "hono";
 import { html, raw } from "hono/html";
 import type { Env } from "../../env";
+import { safeDecodeURIComponent } from "../../normalize";
 import { PREF_EXPR, prefectureStats } from "../../prefstats";
 import { PREFECTURES } from "../../schema";
 import { formatDateShort, formatPct, stageBadgeClass } from "../format";
@@ -32,7 +33,7 @@ const PREF_MAP_CSS = `
 }
 .segmented a, .segmented button {
   border: 0; background: transparent; color: var(--muted);
-  padding: 6px 12px; border-radius: 999px; font: 12.5px/1.2 inherit; font-weight: 600;
+  padding: 6px 12px; border-radius: 999px; font-size: 12.5px; line-height: 1.2; font-family: inherit; font-weight: 600;
   cursor: pointer; text-decoration: none; white-space: nowrap;
   transition: background 0.16s, color 0.16s;
 }
@@ -50,7 +51,7 @@ const PREF_MAP_CSS = `
 .region-pill {
   flex-shrink: 0; border: 1px solid var(--line); background: var(--surface-subtle);
   color: var(--text-sub); padding: 5px 12px; border-radius: 999px;
-  font: 12.5px/1.3 inherit; font-weight: 600; cursor: pointer;
+  font-size: 12.5px; line-height: 1.3; font-family: inherit; font-weight: 600; cursor: pointer;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 .region-pill:hover { border-color: var(--accent-border); color: var(--accent); }
@@ -142,7 +143,7 @@ const PREF_MAP_CSS = `
   background: var(--drawer-bg);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--line-strong);
-  color: var(--text); font: 12.5px/1.2 inherit; font-weight: 600;
+  color: var(--text); font-size: 12.5px; line-height: 1.2; font-family: inherit; font-weight: 600;
   cursor: pointer; box-shadow: var(--shadow-card);
   opacity: 0; pointer-events: none; transform: translateY(-6px);
   transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.15s;
@@ -585,10 +586,10 @@ export async function renderPrefecturesListPage(c: Context<{ Bindings: Env }>) {
 
 /** 都道府県別ページ /prefectures/:name */
 export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) {
-  const name = decodeURIComponent(c.req.param("name") ?? "");
+  const name = safeDecodeURIComponent(c.req.param("name") ?? "");
   const origin = new URL(c.req.url).origin;
 
-  if (!PREF_SET.has(name)) {
+  if (!name || !PREF_SET.has(name)) {
     return c.html(
       renderLayout({
         title: "都道府県が見つかりません｜HANZAI Watch",
@@ -608,6 +609,10 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
   const prefCond = name === "不明" ? `${PREF_EXPR.occurrence} IS NULL` : `${PREF_EXPR.occurrence} = ?`;
   const binds = name === "不明" ? [] : [name];
 
+  const hasAgg = Boolean(
+    await db.prepare("SELECT 1 AS ok FROM agg_meta WHERE key = 'last_aggregated_at' LIMIT 1").first(),
+  );
+
   const [countRes, lawsRes, themesRes, citiesRes, casesRes] = await db.batch([
     db
       .prepare(
@@ -616,27 +621,45 @@ export async function renderPrefectureDetailPage(c: Context<{ Bindings: Env }>) 
          FROM cases c WHERE c.status = 'published' AND ${prefCond}`,
       )
       .bind(...binds),
-    db
-      .prepare(
-        `WITH case_laws AS (
-           SELECT r.case_id, rc.law_code FROM report_charges rc JOIN reports r ON r.id = rc.report_id WHERE rc.law_code IS NOT NULL
-           UNION
-           SELECT j.case_id, jc.law_code FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id WHERE jc.law_code IS NOT NULL AND j.status = 'published'
-         )
-         SELECT l.code, l.name, COUNT(DISTINCT c.id) AS cases
-         FROM cases c JOIN case_laws cl ON cl.case_id = c.id JOIN laws l ON l.code = cl.law_code
-         WHERE c.status = 'published' AND ${prefCond}
-         GROUP BY l.code, l.name ORDER BY cases DESC LIMIT 12`,
-      )
-      .bind(...binds),
-    db
-      .prepare(
-        `SELECT ct.theme, COUNT(DISTINCT c.id) AS cases
-         FROM cases c JOIN case_themes ct ON ct.case_id = c.id
-         WHERE c.status = 'published' AND ${prefCond}
-         GROUP BY ct.theme ORDER BY cases DESC LIMIT 12`,
-      )
-      .bind(...binds),
+    hasAgg
+      ? db
+          .prepare(
+            `SELECT a.law_code AS code, l.name, SUM(a.cases) AS cases
+             FROM agg_law_monthly a JOIN laws l ON l.code = a.law_code
+             WHERE a.prefecture = ?
+             GROUP BY a.law_code, l.name ORDER BY cases DESC LIMIT 12`,
+          )
+          .bind(name)
+      : db
+          .prepare(
+            `WITH case_laws AS (
+               SELECT r.case_id, rc.law_code FROM report_charges rc JOIN reports r ON r.id = rc.report_id WHERE rc.law_code IS NOT NULL
+               UNION
+               SELECT j.case_id, jc.law_code FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id WHERE jc.law_code IS NOT NULL AND j.status = 'published'
+             )
+             SELECT l.code, l.name, COUNT(DISTINCT c.id) AS cases
+             FROM cases c JOIN case_laws cl ON cl.case_id = c.id JOIN laws l ON l.code = cl.law_code
+             WHERE c.status = 'published' AND ${prefCond}
+             GROUP BY l.code, l.name ORDER BY cases DESC LIMIT 12`,
+          )
+          .bind(...binds),
+    hasAgg
+      ? db
+          .prepare(
+            `SELECT theme, SUM(cases) AS cases
+             FROM agg_theme_monthly
+             WHERE prefecture = ?
+             GROUP BY theme ORDER BY cases DESC LIMIT 12`,
+          )
+          .bind(name)
+      : db
+          .prepare(
+            `SELECT ct.theme, COUNT(DISTINCT c.id) AS cases
+             FROM cases c JOIN case_themes ct ON ct.case_id = c.id
+             WHERE c.status = 'published' AND ${prefCond}
+             GROUP BY ct.theme ORDER BY cases DESC LIMIT 12`,
+          )
+          .bind(...binds),
     db
       .prepare(
         `SELECT c.city, COUNT(*) AS cases

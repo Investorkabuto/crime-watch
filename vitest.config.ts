@@ -14,6 +14,7 @@ export default defineConfig({
             INGEST_TOKEN: "test-ingest-token",
             INGEST_HMAC_SECRET: "test-hmac-secret",
             VIEWER_TOKEN: "test-viewer-token",
+            ADMIN_TOKEN: "test-admin-token",
           },
         },
       };

@@ -3,7 +3,7 @@
 
 export const THEMES = [
   // 詐欺・強盗
-  "闇バイト・トクリュウ", "特殊詐欺", "SNS型投資詐欺", "ロマンス詐欺", "強盗",
+  "闇バイト・トクリュウ", "特殊詐欺", "SNS型投資詐欺", "ロマンス詐欺", "生活保護不正受給", "強盗",
   // 立場
   "公務員の犯罪", "教員の犯罪", "警察官の犯罪", "医療・福祉職の犯罪", "政治家・汚職", "企業犯罪", "著名人",
   // 被害者
@@ -41,6 +41,10 @@ const CASE_VICTIMS = `
 
 /** [テーマ, その事件の case_id を返す SQL] */
 const AUTO_RULES: [Theme, string][] = [
+  // 生活保護法違反、または詐欺の事件で、見出し・要約に「生活保護」と書かれているもの
+  ["生活保護不正受給", `SELECT case_id FROM (${CASE_LAWS}) WHERE law_code = 'public_assistance'
+                         UNION SELECT cl.case_id FROM (${CASE_LAWS}) cl JOIN cases c ON c.id = cl.case_id
+                          WHERE cl.law_code IN ('fraud','organized_fraud') AND (c.title LIKE '%生活保護%' OR c.summary LIKE '%生活保護%')`],
   ["強盗", `SELECT case_id FROM (${CASE_LAWS}) WHERE law_code IN ('robbery','robbery_injury','robbery_murder')`],
   ["特殊詐欺", `SELECT case_id FROM (${CASE_LAWS}) WHERE raw_text LIKE '%特殊詐欺%' OR raw_text LIKE '%オレオレ%' OR raw_text LIKE '%還付金詐欺%' OR raw_text LIKE '%架空請求%'`],
   ["政治家・汚職", `SELECT case_id FROM (${CASE_LAWS}) WHERE law_code IN ('bribery','election')

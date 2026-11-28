@@ -193,7 +193,7 @@ a { color: var(--accent); }
   });
 
   async function init() {
-    if (!token) { msg("閲覧用トークン（VIEWER_TOKEN）を入力してください。"); return; }
+    if (!token) { msg("管理用トークン（ADMIN_TOKEN）を入力してください。"); return; }
     try {
       laws = (await api("/api/v1/laws")).laws;
       const lawOpts = '<option value="">すべての法律</option>' + laws.map((l) => '<option value="' + esc(l.code) + '">' + esc(l.name) + "</option>").join("");
@@ -289,7 +289,7 @@ a { color: var(--accent); }
     if (fd.get("status") === "") p.delete("status");
     const statusSel = $("#caseFilter select[name=status]").value;
     if (statusSel) p.set("status", statusSel);
-    const r = await api("/api/v1/cases?" + p);
+    const r = await api("/api/v1/admin/cases?" + p);
     const basis = fd.get("pref_basis");
     const note = fd.get("prefecture") && basis && basis !== "occurrence"
       ? '<p class="muted">都道府県は「' + esc(BASIS_LABEL[basis]) + "」の基準で絞り込んでいます（一覧の都道府県の列は発生地です）。</p>" : "";
@@ -325,7 +325,7 @@ a { color: var(--accent); }
   }
 
   async function openCase(id) {
-    const d = await api("/api/v1/cases/" + encodeURIComponent(id));
+    const d = await api("/api/v1/admin/cases/" + encodeURIComponent(id));
     const k = d.case;
     const events = [
       ...d.reports.map((r) => ({ kind: "report", at: r.reported_at, r })),
@@ -569,7 +569,7 @@ a { color: var(--accent); }
     }));
   }
 
-  if (token) { $("#token").value = token; init(); } else { msg("閲覧用トークン（VIEWER_TOKEN）を入力してください。"); }
+  if (token) { $("#token").value = token; init(); } else { msg("管理用トークン（ADMIN_TOKEN）を入力してください。"); }
 })();
 </script>
 </body>
