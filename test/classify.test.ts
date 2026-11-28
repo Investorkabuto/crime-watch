@@ -169,11 +169,24 @@ describe("第3波の罪名（0012）", () => {
     ["逮捕致傷", "confinement"],
     ["有印私文書行使", "forgery"],
     ["長崎県少年保護育成条例違反", "youth_ordinance"],
+    ["嘱託殺人", "consent_murder"],
+    ["承諾殺人", "consent_murder"],
+    ["自殺ほう助", "consent_murder"],
     ["児童買春・ポルノ禁止法違反（提供）", "child_porn"],
   ])("%s → %s", (raw, law) => {
     expect(classifyCharges([raw], aliases).every((c) => c.lawCode === law)).toBe(true);
   });
   it("「偽造・行使」の「行使」は直前の罪状と同じ法律", () => {
     expect(classifyCharges(["有印私文書偽造・行使"], aliases).map((c) => c.lawCode)).toEqual(["forgery", "forgery"]);
+  });
+});
+
+describe("自殺関与・同意殺人（0018）", () => {
+  it("「自殺ほう助」はほう助の修飾ではなく、それ自体が罪名", () => {
+    const [c] = classifyCharges(["自殺ほう助"], aliases);
+    expect([c?.lawCode, c?.modifier]).toEqual(["consent_murder", null]);
+  });
+  it("「殺人」はそのまま殺人罪", () => {
+    expect(classifyCharges(["殺人未遂"], aliases).map((c) => [c.lawCode, c.modifier])).toEqual([["murder", "attempt"]]);
   });
 });
