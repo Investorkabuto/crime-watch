@@ -472,6 +472,16 @@ describe("テーマ", () => {
     expect(row.themes).toContain("闇バイト・トクリュウ");
   });
 
+  it("生活保護不正受給: 生活保護法違反、または詐欺で記事に生活保護とあるもの", async () => {
+    const a = { ...report.items[0], external_id: "sp-1", case_ref: "case-sp-1", charges: ["生活保護法違反"], themes: ["生活保護不正受給"] };
+    const b = { ...report.items[0], external_id: "sp-2", case_ref: "case-sp-2", charges: ["詐欺"], title: "生活保護費をだまし取った疑いで男を逮捕", themes: [] };
+    const c = { ...report.items[0], external_id: "sp-3", case_ref: "case-sp-3", charges: ["詐欺"], title: "投資名目で現金をだまし取った疑い", themes: [] };
+    expect(((await (await signedIngest({ items: [a, b, c] })).json()) as Json).rejected).toBe(0);
+    expect(await themesOf("case-sp-1")).toEqual(expect.arrayContaining(["生活保護不正受給:auto", "生活保護不正受給:muse"]));
+    expect(await themesOf("case-sp-2")).toContain("生活保護不正受給:auto");
+    expect(await themesOf("case-sp-3")).not.toContain("生活保護不正受給:auto");
+  });
+
   it("著名人は区分だけを保存してテーマにし、交通の罪の 75 歳以上は高齢ドライバー", async () => {
     const r = {
       ...report.items[0],
