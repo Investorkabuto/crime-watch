@@ -37,7 +37,8 @@ export function normalizeCharge(s: string): string {
     .replace(/(共謀|共同正犯)/g, "");
 }
 
-const LAW_NAMES_WITH_OYOBI = ["麻薬及び向精神薬取締法", "出入国管理及び難民認定法", "私的独占の禁止及び公正取引の確保に関する法律", "銃砲刀剣類所持等取締法"];
+const LAW_NAMES_WITH_OYOBI = ["麻薬及び向精神薬取締法", "出入国管理及び難民認定法", "私的独占の禁止及び公正取引の確保に関する法律", "銃砲刀剣類所持等取締法",
+  "組織的な犯罪の処罰及び犯罪収益の規制等に関する法律", "預り金及び金利等の取締りに関する法律"];
 
 /** 括弧の外にある区切り（・、,，/／）で分割する */
 export function splitCharges(raw: string): string[] {
