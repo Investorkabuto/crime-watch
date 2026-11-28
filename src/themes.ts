@@ -26,18 +26,19 @@ export const PUBLIC_FIGURES = [
 ] as const;
 
 // ===== 自動のテーマ（SQL で事件ごとに判定する）=====
-// 事件に属する罪状の法律・本文、人物、被害者、判決を、それぞれ 1 つの集まりにしてから判定する
+// 事件に属する罪状の法律・本文、人物、被害者、判決を、それぞれ 1 つの集まりにしてから判定する。
+// CROSS JOIN は結合の順番を固定し、+law_code は法律の索引を使わせない（どちらも SQLite の仕様）。1 件ごとの計算で、事件の報道・判決から読み始めるようにするため
 const CASE_LAWS = `
-  SELECT r.case_id, rc.law_code, rc.raw_text FROM report_charges rc JOIN reports r ON r.id = rc.report_id
-  UNION ALL SELECT j.case_id, jc.law_code, jc.raw_text FROM judgment_charges jc JOIN judgments j ON j.id = jc.judgment_id`;
+  SELECT r.case_id, +rc.law_code AS law_code, rc.raw_text FROM reports r CROSS JOIN report_charges rc ON rc.report_id = r.id WHERE 1=1{{R}}
+  UNION ALL SELECT j.case_id, +jc.law_code AS law_code, jc.raw_text FROM judgments j CROSS JOIN judgment_charges jc ON jc.judgment_id = j.id WHERE 1=1{{J}}`;
 const CASE_PEOPLE = `
   SELECT r.case_id, p.occupation, p.age, p.age_group, p.nationality, p.nationality_code, p.public_figure
-    FROM report_persons p JOIN reports r ON r.id = p.report_id
+    FROM reports r CROSS JOIN report_persons p ON p.report_id = r.id WHERE 1=1{{R}}
   UNION ALL SELECT j.case_id, j.defendant_occupation, j.defendant_age, j.defendant_age_group, j.defendant_nationality,
-    j.defendant_nationality_code, j.defendant_public_figure FROM judgments j`;
+    j.defendant_nationality_code, j.defendant_public_figure FROM judgments j WHERE 1=1{{J}}`;
 const CASE_VICTIMS = `
-  SELECT r.case_id, v.age_group, v.relation FROM victims v JOIN reports r ON v.parent_type = 'report' AND r.id = v.parent_id
-  UNION ALL SELECT j.case_id, v.age_group, v.relation FROM victims v JOIN judgments j ON v.parent_type = 'judgment' AND j.id = v.parent_id`;
+  SELECT r.case_id, v.age_group, v.relation FROM reports r CROSS JOIN victims v ON v.parent_type = 'report' AND v.parent_id = r.id WHERE 1=1{{R}}
+  UNION ALL SELECT j.case_id, v.age_group, v.relation FROM judgments j CROSS JOIN victims v ON v.parent_type = 'judgment' AND v.parent_id = j.id WHERE 1=1{{J}}`;
 
 /** [テーマ, その事件の case_id を返す SQL] */
 const AUTO_RULES: [Theme, string][] = [
@@ -69,39 +70,53 @@ const AUTO_RULES: [Theme, string][] = [
   ["サイバー犯罪", `SELECT case_id FROM (${CASE_LAWS}) WHERE law_code = 'unauthorized_access'`],
   ["薬物", `SELECT cl.case_id FROM (${CASE_LAWS}) cl JOIN laws l ON l.code = cl.law_code WHERE l.group_name = '薬物'`],
   ["外国人犯罪", `SELECT case_id FROM (${CASE_PEOPLE}) WHERE nationality IS NOT NULL AND nationality <> '日本' AND (nationality_code IS NULL OR nationality_code <> 'JP')`],
-  ["少年事件", `SELECT id AS case_id FROM cases WHERE is_juvenile = 1`],
-  ["死刑判決", `SELECT case_id FROM judgments WHERE sentence_type = '死刑'`],
-  ["無期判決", `SELECT case_id FROM judgments WHERE sentence_type IN ('無期拘禁刑','無期懲役','無期禁錮')`],
-  ["無罪判決", `SELECT case_id FROM judgments WHERE sentence_type = '無罪'`],
-  ["求刑超え", `SELECT case_id FROM judgments WHERE ratio_to_demand > 1`],
+  ["少年事件", `SELECT id AS case_id FROM cases WHERE is_juvenile = 1{{C}}`],
+  ["死刑判決", `SELECT case_id FROM judgments j WHERE sentence_type = '死刑'{{J}}`],
+  ["無期判決", `SELECT case_id FROM judgments j WHERE sentence_type IN ('無期拘禁刑','無期懲役','無期禁錮'){{J}}`],
+  ["無罪判決", `SELECT case_id FROM judgments j WHERE sentence_type = '無罪'{{J}}`],
+  ["求刑超え", `SELECT case_id FROM judgments j WHERE ratio_to_demand > 1{{J}}`],
 ];
 
 /**
  * 事件のテーマを計算し直す。caseId を省くと全件。
  * Muse が付けたテーマと自動のテーマを、集合演算の SQL でまとめて入れ直す（事件の数によらずクエリの数は一定）。
+ * 1 件ごとの計算では、事件の絞り込みを各 SELECT の内側（{{R}} {{J}} {{C}}）に入れる。外側で絞ると、
+ * SQLite が UNION の内側に条件を持ち込めず、毎回データベース全体を読んでしまう（D1 の読み取り上限を超えた原因）。
  */
-export async function recomputeThemes(db: D1Database, caseId?: string): Promise<void> {
+export function scopeSql(sql: string, caseId?: string): string {
+  return sql
+    .replaceAll("{{R}}", caseId ? " AND r.case_id = ?1" : "")
+    .replaceAll("{{J}}", caseId ? " AND j.case_id = ?1" : "")
+    .replaceAll("{{C}}", caseId ? " AND id = ?1" : "");
+}
+
+/** 戻り値は D1 が数えた読み取り行数の合計（監視・テスト用） */
+export async function recomputeThemes(db: D1Database, caseId?: string): Promise<number> {
   const one = caseId ? "WHERE case_id = ?1" : "";
   const caseArgs = caseId ? [caseId] : [];
   const stmts: D1PreparedStatement[] = [
     db.prepare(`DELETE FROM case_themes ${one}`).bind(...caseArgs),
     db
       .prepare(
-        `INSERT OR IGNORE INTO case_themes (case_id, theme, source)
-         SELECT case_id, theme, 'muse' FROM (
-           SELECT r.case_id, it.theme FROM item_themes it JOIN reports r ON it.parent_type = 'report' AND r.id = it.parent_id
-           UNION SELECT j.case_id, it.theme FROM item_themes it JOIN judgments j ON it.parent_type = 'judgment' AND j.id = it.parent_id
-         ) ${one}`,
+        scopeSql(
+          `INSERT OR IGNORE INTO case_themes (case_id, theme, source)
+           SELECT case_id, theme, 'muse' FROM (
+             SELECT r.case_id, it.theme FROM reports r CROSS JOIN item_themes it ON it.parent_type = 'report' AND it.parent_id = r.id WHERE 1=1{{R}}
+             UNION SELECT j.case_id, it.theme FROM judgments j CROSS JOIN item_themes it ON it.parent_type = 'judgment' AND it.parent_id = j.id WHERE 1=1{{J}}
+           )`,
+          caseId,
+        ),
       )
       .bind(...caseArgs),
     ...AUTO_RULES.map(([theme, sql]) =>
       db
         .prepare(
           `INSERT OR IGNORE INTO case_themes (case_id, theme, source)
-           SELECT DISTINCT case_id, ?2, 'auto' FROM (${sql}) ${caseId ? "WHERE case_id = ?1" : "WHERE ?1 IS NULL"}`,
+           SELECT DISTINCT case_id, ?2, 'auto' FROM (${scopeSql(sql, caseId)}) WHERE ?1 IS NULL OR case_id = ?1`,
         )
         .bind(caseId ?? null, theme),
     ),
   ];
-  await db.batch(stmts);
+  const results = await db.batch(stmts);
+  return results.reduce((n, r) => n + (r.meta?.rows_read ?? 0), 0);
 }

@@ -242,7 +242,7 @@ async function queryCaseDetail(db: D1Database, id: string, includeHidden: boolea
               city, police_agency, police_prefecture, police_station, prosecutor_office,
               motive, weapon, accomplice_count, location_type, non_prosecution_reason,
               link_confidence, backfill, source_url, source_name,
-              additional_sources, flags FROM reports WHERE case_id = ?1 ORDER BY reported_at`,
+              additional_sources, flags${includeHidden ? ", archive_url, evidence_quote" : ""} FROM reports WHERE case_id = ?1 ORDER BY reported_at`,
     ).bind(kase.id),
     db.prepare(
       `SELECT rc.report_id, rc.charge_text, rc.raw_text, rc.law_code, l.name AS law_name, rc.modifier FROM report_charges rc
@@ -290,9 +290,11 @@ async function queryCaseDetail(db: D1Database, id: string, includeHidden: boolea
       victims: victimsOf("report", r.id),
     })),
     judgments: ((judgments?.results ?? []) as Record<string, unknown>[]).map((j) => {
-      const { person_ref: _omit, ...rest } = j; // 人物 ID は内部用なので出さない
+      // 人物 ID は内部用なので出さない。検証用の項目（アーカイブ・根拠の一文）は管理用の詳細でだけ返す
+      const { person_ref: _omit, archive_url, evidence_quote, ...rest } = j;
       return {
         ...rest,
+        ...(includeHidden ? { archive_url, evidence_quote } : {}),
         charges: by(jc, "judgment_id", j.id),
         judges: by(jg, "judgment_id", j.id),
         victims: victimsOf("judgment", j.id),

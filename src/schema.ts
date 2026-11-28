@@ -88,6 +88,9 @@ const common = {
   source_url: url,
   source_name: z.string().optional(),
   additional_sources: z.array(z.strictObject({ url, name: z.string().optional() })).optional(),
+  // 検証用（公開しない）: 出典を Web アーカイブに保存した URL と、判決・刑・求刑などが書かれた根拠の一文（記事の短い引用）
+  archive_url: url.optional(),
+  evidence_quote: z.string().min(1).max(300).optional(),
   victims: z.array(victim).max(100).optional(),
   // 記事に書かれている場合だけ付けるテーマ（§13.8）
   themes: z.array(z.enum(THEMES)).max(20).optional(),

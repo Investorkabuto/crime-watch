@@ -656,3 +656,47 @@ describe("罪状の判定し直し", () => {
     expect(results[2]?.charge_text).toBe("虚偽公文書作成・行使");
   });
 });
+
+describe("検証用の項目（アーカイブ・根拠の一文）", () => {
+  it("保存し、管理用の詳細でだけ返す", async () => {
+    const r = { ...report.items[0], external_id: "ev-r", case_ref: "case-ev", archive_url: "https://web.archive.org/web/2026/https://example.com/a", evidence_quote: "県警は26日、男を逮捕した。" };
+    const j = { ...judgment.items[0], external_id: "ev-j", case_ref: "case-ev", archive_url: "https://web.archive.org/web/2026/https://example.com/b", evidence_quote: "懲役3年（求刑懲役4年）の判決を言い渡した。" };
+    expect(((await (await signedIngest({ items: [r, j] })).json()) as Json).rejected).toBe(0);
+    const pub = (await (await view("/api/v1/cases/case-ev")).json()) as Json;
+    expect(pub.reports[0].evidence_quote).toBeUndefined();
+    expect(pub.judgments[0].evidence_quote).toBeUndefined();
+    expect(pub.judgments[0].archive_url).toBeUndefined();
+    const adm = (await (await adminView("/api/v1/admin/cases/case-ev")).json()) as Json;
+    expect(adm.reports[0].evidence_quote).toBe("県警は26日、男を逮捕した。");
+    expect(adm.judgments[0].archive_url).toBe("https://web.archive.org/web/2026/https://example.com/b");
+  });
+  it("根拠の一文は 300 字まで", async () => {
+    const r = { ...report.items[0], external_id: "ev-long", case_ref: "case-ev-long", evidence_quote: "あ".repeat(301) };
+    const res = (await (await signedIngest({ items: [r] })).json()) as Json;
+    expect(res.rejected).toBe(1);
+  });
+});
+
+describe("テーマの再計算の読み取り量", () => {
+  it("1 件ごとの再計算は、データ全体の量によらず、その事件の行だけを読む", async () => {
+    const { recomputeThemes } = await import("../src/themes");
+    const mk = (i: number) => ({
+      ...report.items[0],
+      external_id: `rr-${i}`,
+      case_ref: `case-rr-${i}`,
+      charges: ["詐欺", "窃盗"],
+      suspects: [{ person_ref: `rr-p${i}`, gender: "male", age: 30, occupation: "会社員" }],
+      victims: [{ gender: "female", age_group: "80代" }],
+    });
+    const first = Array.from({ length: 20 }, (_, i) => mk(i));
+    expect(((await (await signedIngest({ items: first })).json()) as Json).rejected).toBe(0);
+    const r = await env.DB.prepare("SELECT id FROM cases WHERE case_ref = 'case-rr-0'").first<{ id: string }>();
+    const small = await recomputeThemes(env.DB, r!.id);
+    const more = Array.from({ length: 60 }, (_, i) => mk(i + 20));
+    expect(((await (await signedIngest({ items: more })).json()) as Json).rejected).toBe(0);
+    const large = await recomputeThemes(env.DB, r!.id);
+    // データが 4 倍になっても、1 件の再計算で読む行数はほとんど変わらない
+    expect(large).toBeLessThan(small * 1.5 + 50);
+    expect(large).toBeLessThan(1000);
+  });
+});
