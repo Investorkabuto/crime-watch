@@ -189,13 +189,14 @@ async function upsertReport(
     db
       .prepare(
         `UPDATE reports SET police_agency = ?, police_prefecture = ?, police_station = ?, prosecutor_office = ?,
-           motive = ?, weapon = ?, accomplice_count = ?, location_type = ?, non_prosecution_reason = ? WHERE id = ?`,
+           motive = ?, weapon = ?, accomplice_count = ?, location_type = ?, non_prosecution_reason = ?,
+           archive_url = ?, evidence_quote = ? WHERE id = ?`,
       )
       .bind(
         police?.name ?? null, police?.prefecture ?? null,
         normalizePoliceStation(item.police_station),
         normalizeProsecutorOffice(item.prosecutor_office), ...circumstanceValues(item.circumstances),
-        item.non_prosecution_reason ?? null, id,
+        item.non_prosecution_reason ?? null, item.archive_url ?? null, item.evidence_quote ?? null, id,
       ),
     ...victimStatements(db, "report", id, item.victims),
     ...themeStatements(db, "report", id, item.themes),
@@ -387,14 +388,15 @@ async function upsertJudgment(
         `UPDATE judgments SET prefecture = ?, city = ?, police_agency = ?, police_prefecture = ?, prosecutor_office = ?,
            motive = ?, weapon = ?, accomplice_count = ?, location_type = ?, defendant_occupation = ?,
            defendant_nationality = ?, defendant_nationality_code = ?, defendant_residence_status = ?, nationality_inherited = ?,
-           defendant_public_figure = ?
+           defendant_public_figure = ?, archive_url = ?, evidence_quote = ?
          WHERE id = ?`,
       )
       .bind(
         item.prefecture ?? null, item.city ?? null, police?.name ?? null,
         police?.prefecture ?? null, normalizeProsecutorOffice(item.prosecutor_office),
         ...circumstanceValues(item.circumstances), d?.occupation ?? null,
-        nat?.name ?? null, nat?.code ?? null, residence, natInherited, d?.public_figure ?? null, id,
+        nat?.name ?? null, nat?.code ?? null, residence, natInherited, d?.public_figure ?? null,
+        item.archive_url ?? null, item.evidence_quote ?? null, id,
       ),
     ...victimStatements(db, "judgment", id, item.victims),
     ...themeStatements(db, "judgment", id, item.themes),

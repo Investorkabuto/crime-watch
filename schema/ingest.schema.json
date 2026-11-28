@@ -274,6 +274,16 @@
             "$ref": "#/$defs/source"
           }
         },
+        "archive_url": {
+          "$ref": "#/$defs/url",
+          "description": "検証用（公開しない）。出典を Web アーカイブ（archive.org など）に保存した URL"
+        },
+        "evidence_quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "検証用（公開しない）。判決・刑・求刑・逮捕などが書かれた出典の一文（短い引用）"
+        },
         "stage": {
           "enum": [
             "発生",
@@ -462,6 +472,16 @@
           "items": {
             "$ref": "#/$defs/source"
           }
+        },
+        "archive_url": {
+          "$ref": "#/$defs/url",
+          "description": "検証用（公開しない）。出典を Web アーカイブ（archive.org など）に保存した URL"
+        },
+        "evidence_quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "検証用（公開しない）。判決・刑・求刑・逮捕などが書かれた出典の一文（短い引用）"
         },
         "court": {
           "type": "string",

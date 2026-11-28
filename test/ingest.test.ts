@@ -656,3 +656,23 @@ describe("罪状の判定し直し", () => {
     expect(results[2]?.charge_text).toBe("虚偽公文書作成・行使");
   });
 });
+
+describe("検証用の項目（アーカイブ・根拠の一文）", () => {
+  it("保存し、管理用の詳細でだけ返す", async () => {
+    const r = { ...report.items[0], external_id: "ev-r", case_ref: "case-ev", archive_url: "https://web.archive.org/web/2026/https://example.com/a", evidence_quote: "県警は26日、男を逮捕した。" };
+    const j = { ...judgment.items[0], external_id: "ev-j", case_ref: "case-ev", archive_url: "https://web.archive.org/web/2026/https://example.com/b", evidence_quote: "懲役3年（求刑懲役4年）の判決を言い渡した。" };
+    expect(((await (await signedIngest({ items: [r, j] })).json()) as Json).rejected).toBe(0);
+    const pub = (await (await view("/api/v1/cases/case-ev")).json()) as Json;
+    expect(pub.reports[0].evidence_quote).toBeUndefined();
+    expect(pub.judgments[0].evidence_quote).toBeUndefined();
+    expect(pub.judgments[0].archive_url).toBeUndefined();
+    const adm = (await (await adminView("/api/v1/admin/cases/case-ev")).json()) as Json;
+    expect(adm.reports[0].evidence_quote).toBe("県警は26日、男を逮捕した。");
+    expect(adm.judgments[0].archive_url).toBe("https://web.archive.org/web/2026/https://example.com/b");
+  });
+  it("根拠の一文は 300 字まで", async () => {
+    const r = { ...report.items[0], external_id: "ev-long", case_ref: "case-ev-long", evidence_quote: "あ".repeat(301) };
+    const res = (await (await signedIngest({ items: [r] })).json()) as Json;
+    expect(res.rejected).toBe(1);
+  });
+});
